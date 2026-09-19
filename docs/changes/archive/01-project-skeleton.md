@@ -9,7 +9,7 @@
 | Change | `01` |
 | Slug | `project-skeleton` |
 | Title | Project Skeleton |
-| Status | `active` |
+| Status | `archived` |
 | Branch | `feature/01-project-skeleton` |
 
 ---

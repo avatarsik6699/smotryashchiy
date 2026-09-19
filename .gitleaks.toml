@@ -1,0 +1,11 @@
+title = "sre-kit Gitleaks configuration"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Deterministic 64-hex fake key used only by the distribution contract test"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''scripts/tests/distribution-contract\.test\.sh$''']
+stopwords = ['''0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef''']

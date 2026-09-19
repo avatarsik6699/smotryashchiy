@@ -1,11 +1,11 @@
-title = "sre-kit Gitleaks configuration"
+title = "smotryashchiy Gitleaks configuration"
 
 [extend]
 useDefault = true
 
 [[allowlists]]
-description = "Deterministic 64-hex fake key used only by the distribution contract test"
+description = "Deterministic fake admin password used only by unit tests"
 targetRules = ["generic-api-key"]
 condition = "AND"
-paths = ['''scripts/tests/distribution-contract\.test\.sh$''']
-stopwords = ['''0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef''']
+paths = ['''_test\.go$''']
+stopwords = ['''correct-horse-battery-staple''']

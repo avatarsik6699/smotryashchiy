@@ -5,17 +5,26 @@
 > Gate tables. Keep them accurate. Rows for areas that do not exist yet are `n/a` and get filled by
 > the change that introduces the area.
 >
-> **Stack status:** MINIMAL (Go skeleton only; frontend and infra pending their changes)
+> **Stack status:** MINIMAL (Go skeleton with auth and CI; frontend and deploy pending their changes)
 
 ## Stack
 
 | Layer | Technology |
 |-------|-----------|
-| Backend | Go 1.26 (`go.mod`), single binary with `server` / `agent` / `admin` modes |
-| Database | SQLite (pure-Go driver, decided in Change 01) |
+| Backend | Go 1.26.6 minimum (`go.mod`; earlier patches carry fixed stdlib CVEs), single binary with `server` / `agent` / `admin` modes |
+| Database | SQLite via `modernc.org/sqlite` (pure Go, WAL, single writer), embedded forward-only migrations |
 | Frontend | Embedded static SPA — pending (see SPEC §8) |
 | Transport | Userspace WireGuard inside the binary — pending Stage-2 spike |
-| CI | GitHub Actions (added in Change 01) |
+| CI | GitHub Actions (`.github/workflows/ci.yml`) on pull requests and pushes to `main` |
+
+## Setup
+
+```bash
+go version                 # >= 1.26.6 (go.mod triggers an automatic toolchain download if older)
+cp .env.example .env       # optional; every variable has a development default
+go run ./cmd/smotryashchiy server   # prints a one-time development admin password
+printf '%s\n' "$PASSWORD" | go run ./cmd/smotryashchiy admin set-password   # >= 24 bytes, stdin only
+```
 
 ## Fast Gate
 
@@ -33,8 +42,8 @@
 | Module integrity | `go mod verify` | |
 | Backend tests | `go test ./...` | |
 | Smoke | `go build ./...` | |
-| Secrets scan | `n/a` | add in Change 01 (config in `.gitleaks.toml`) |
-| Dependency audit | `n/a` | add in Change 01 (`govulncheck`) |
+| Secrets scan (Gitleaks) | `bash scripts/secrets-gate.sh` | Pins Gitleaks v8.30.1; scans full git history and non-ignored working files |
+| Dependency audit | `bash scripts/vuln-gate.sh` | Pins govulncheck v1.8.0; fails on reachable vulnerabilities |
 | Frontend / E2E / a11y | `n/a` | added with the UI change |
 
 ## Release Gate

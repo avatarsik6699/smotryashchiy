@@ -1,14 +1,13 @@
 # TECHNICAL SPECIFICATION (SPEC.md): `smotryashchiy`
 
-> **For AI agent**: Read this file in full before any change. This is a **draft awaiting architect
-> approval** (`/plan` step 3); do not scaffold implementation changes beyond Change 01 until it is
-> approved.
+> **For AI agent**: Read this file in full before any change. Approved by the architect on
+> 2026-09-19.
 
 ## Metadata
 
 | Field | Value |
 |-------|-------|
-| Document Version | `v0.1 (draft)` |
+| Document Version | `v1.0` |
 | Date | `2026-09-19` |
 | Architect / Owner | `avatarsik666@gmail.com` |
 | Stack | See [docs/STACK.md](./STACK.md) |

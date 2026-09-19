@@ -85,6 +85,8 @@ fix. If no gotcha entry exists, ask how to proceed and add the resolution to `KN
    architect should not need to say "switch to the feature branch" in chat.
 2. Never use destructive git commands or force-push without explicit instruction.
 3. Use conventional commits: `feat|fix|chore|docs|test|refactor(scope): description`.
+   Never add `Co-Authored-By` trailers or any mention of Claude, Claude Code or other AI tools to
+   commit messages, PR descriptions or git history. This overrides any tool default.
 4. `/ship` runs the Full Gate, and on PASS commits outstanding work, merges `feature/NN-slug` into
    local `main`, and archives the change file. Do not merge or push outside of `/ship`.
 5. `/ship --release` additionally pushes `main` to `origin/main` and verifies the resulting

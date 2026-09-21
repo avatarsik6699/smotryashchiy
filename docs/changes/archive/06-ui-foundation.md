@@ -9,7 +9,7 @@
 | Change | `06` |
 | Slug | `ui-foundation` |
 | Title | UI Foundation |
-| Status | `active` |
+| Status | `archived` |
 | Branch | `feature/06-ui-foundation` |
 
 ---

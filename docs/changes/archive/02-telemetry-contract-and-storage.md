@@ -9,7 +9,7 @@
 | Change | `02` |
 | Slug | `telemetry-contract-and-storage` |
 | Title | Telemetry Contract and Storage |
-| Status | `active` |
+| Status | `archived` |
 | Branch | `feature/02-telemetry-contract-and-storage` |
 
 ---

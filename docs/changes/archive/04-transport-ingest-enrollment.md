@@ -9,7 +9,7 @@
 | Change | `04` |
 | Slug | `transport-ingest-enrollment` |
 | Title | Transport, Ingest and Enrollment |
-| Status | `active` |
+| Status | `archived` |
 | Branch | `feature/04-transport-ingest-enrollment` |
 
 ---

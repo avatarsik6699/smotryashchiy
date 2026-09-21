@@ -9,7 +9,7 @@
 | Change | `07` |
 | Slug | `single-page-dashboard` |
 | Title | Single-Page Dashboard |
-| Status | `active` |
+| Status | `archived` |
 | Branch | `feature/07-single-page-dashboard` |
 
 ---

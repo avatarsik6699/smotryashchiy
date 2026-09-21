@@ -188,7 +188,22 @@ func (s *Store) Metrics(ctx context.Context, q application.MetricQuery) ([]domai
 		f.add("name = ?", q.Name)
 	}
 	var query string
-	if q.Latest {
+	if q.Step > 0 {
+		if q.From != nil {
+			f.add("ts >= ?", q.From.UnixMilli())
+		}
+		if q.To != nil {
+			f.add("ts <= ?", q.To.UnixMilli())
+		}
+		// Newest sample per Step-second bucket per series; ts is part of the primary key, so the
+		// join back on (series, ts) selects exactly one row per bucket.
+		query = `SELECT m.host_id, m.name, m.labels_json, m.ts, m.value FROM metrics m
+			JOIN (SELECT host_id, name, labels_json, MAX(ts) AS ts FROM metrics` + f.where() + `
+			      GROUP BY host_id, name, labels_json, ts / ?) l
+			  ON m.host_id = l.host_id AND m.name = l.name AND m.labels_json = l.labels_json AND m.ts = l.ts
+			ORDER BY m.ts, m.host_id, m.name, m.labels_json LIMIT ?`
+		f.args = append(f.args, int64(q.Step)*1000)
+	} else if q.Latest {
 		query = `SELECT m.host_id, m.name, m.labels_json, m.ts, m.value FROM metrics m
 			JOIN (SELECT host_id, name, labels_json, MAX(ts) AS ts FROM metrics` + f.where() + `
 			      GROUP BY host_id, name, labels_json) l
@@ -223,6 +238,33 @@ func (s *Store) Metrics(ctx context.Context, q application.MetricQuery) ([]domai
 		points = append(points, p)
 	}
 	return points, rows.Err()
+}
+
+// Hosts lists every registered host ordered by name.
+func (s *Store) Hosts(ctx context.Context) ([]domain.Host, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id, name, created_at, last_seen_at FROM hosts ORDER BY name, id`)
+	if err != nil {
+		return nil, fmt.Errorf("telemetry: list hosts: %w", err)
+	}
+	defer rows.Close()
+	hosts := []domain.Host{}
+	for rows.Next() {
+		var (
+			h        domain.Host
+			created  int64
+			lastSeen sql.NullInt64
+		)
+		if err := rows.Scan(&h.ID, &h.Name, &created, &lastSeen); err != nil {
+			return nil, fmt.Errorf("telemetry: scan host: %w", err)
+		}
+		h.CreatedAt = time.UnixMilli(created).UTC()
+		if lastSeen.Valid {
+			t := time.UnixMilli(lastSeen.Int64).UTC()
+			h.LastSeenAt = &t
+		}
+		hosts = append(hosts, h)
+	}
+	return hosts, rows.Err()
 }
 
 // Checks returns the newest Check for every (host, name).

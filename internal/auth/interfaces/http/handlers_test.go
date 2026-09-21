@@ -35,6 +35,8 @@ func newServer(t *testing.T, opts Options) (http.Handler, *application.Service) 
 	httpserver.RegisterHealth(srv.Mux, "rel", sqlDB.PingContext)
 	NewHandlers(svc, opts).Register(srv.Mux)
 	srv.Mux.HandleFunc("GET /api/private", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	// Stand-in for the embedded SPA catch-all: it answers every path nothing else claims.
+	srv.Mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusTeapot) })
 	var h http.Handler = srv.Mux
 	h = RequireSession(svc)(h)
 	return h, svc
@@ -101,6 +103,64 @@ func TestPrivateRoutesRequireSessionButHealthDoesNot(t *testing.T) {
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("forged session = %d", rec.Code)
+	}
+}
+
+func TestGatingCoversTheAPINamespaceAndLeavesStaticAndHealthPublic(t *testing.T) {
+	h, _ := newServer(t, Options{})
+	get := func(path string, authed bool) int {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		if authed {
+			req.AddCookie(login(h, password, "192.0.2.50:1").Result().Cookies()[0])
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	cases := []struct {
+		path   string
+		authed bool
+		want   int
+	}{
+		{"/", false, http.StatusTeapot},              // the SPA shell loads without a session
+		{"/assets/app.js", false, http.StatusTeapot}, // and so do its assets
+		{"/settings/anything", false, http.StatusTeapot},
+		{"/api/private", false, http.StatusUnauthorized},
+		{"/api/private", true, http.StatusOK},
+		{"/api/does-not-exist", false, http.StatusUnauthorized}, // unknown API paths never reveal existence
+		{"/api", false, http.StatusUnauthorized},
+		{"/api/hosts/../private", false, http.StatusUnauthorized},
+	}
+	for _, c := range cases {
+		if got := get(c.path, c.authed); got != c.want {
+			t.Errorf("GET %s (authed=%v) = %d, want %d", c.path, c.authed, got, c.want)
+		}
+	}
+	if rec := post(h, "/api/enroll", "{}", "192.0.2.1:1"); rec.Code == http.StatusUnauthorized {
+		t.Error("/api/enroll must stay public (its secret is the credential)")
+	}
+}
+
+func TestSessionEndpointAnswers200InBothStatesWithoutLeakingAnything(t *testing.T) {
+	h, _ := newServer(t, Options{})
+	ask := func(cookie *http.Cookie) (int, string) {
+		req := httptest.NewRequest(http.MethodGet, "/api/auth/session", nil)
+		if cookie != nil {
+			req.AddCookie(cookie)
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec.Code, strings.TrimSpace(rec.Body.String())
+	}
+	if code, body := ask(nil); code != 200 || body != `{"authenticated":false}` {
+		t.Fatalf("no cookie: %d %s", code, body)
+	}
+	if code, body := ask(&http.Cookie{Name: "session", Value: "forged"}); code != 200 || body != `{"authenticated":false}` {
+		t.Fatalf("forged cookie: %d %s", code, body)
+	}
+	valid := login(h, password, "192.0.2.60:1").Result().Cookies()[0]
+	if code, body := ask(valid); code != 200 || body != `{"authenticated":true}` {
+		t.Fatalf("valid cookie: %d %s", code, body)
 	}
 }
 

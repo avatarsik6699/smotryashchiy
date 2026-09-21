@@ -7,7 +7,7 @@
 
 | Field | Value |
 |-------|-------|
-| Document Version | `v1.4` |
+| Document Version | `v1.5` |
 | Date | `2026-09-21` |
 | Architect / Owner | `avatarsik666@gmail.com` |
 | Stack | See [docs/STACK.md](./STACK.md) |
@@ -125,7 +125,7 @@ batch advances `hosts.last_seen_at` to the receipt time; producer `ts` never doe
 
 | Verb | Path | Behavior |
 |------|------|----------|
-| GET | `/api/metrics?host=&name=&from=&to=&limit=&latest=` | time series ordered by `ts` ascending, `limit` default 1000, max 5000; `latest=true` returns the newest point per (name, labels) and is incompatible with `from`/`to` |
+| GET | `/api/metrics?host=&name=&from=&to=&limit=&latest=&step=` | time series ordered by `ts` ascending, `limit` default 1000, max 5000; `latest=true` returns the newest point per (name, labels) and is incompatible with `from`/`to`; `step=N` (10–3600 s, raw resolution only, incompatible with `latest`) keeps only the newest sample of every N-second bucket per series (a sampled series, valid for gauges and counters alike) |
 | GET | `/api/checks?host=&name=` | newest Check per (host, name) |
 | GET | `/api/events?host=&level=&limit=` | newest first, `limit` default 100, max 500 |
 
@@ -232,6 +232,33 @@ with jitter, rebuild the tunnel after 3 consecutive failures. `400`/`413` → th
 accepted: drop it, log the server's field-addressed error, continue. Producer time > 5 min ahead of
 the server is a `400`; the agent logs a clock-skew hint.
 
+## 4d. UI API and delivery (Change 06)
+
+All routes below except static assets require the session cookie.
+
+- `GET /api/auth/session` (public) → always `200 {"authenticated":true|false}`; it never answers `401`, so a
+  logged-out load leaves no error in the browser console.
+- `GET /api/hosts` → `{"hosts":[{"id","name","created_at","last_seen_at"}]}` ordered by name;
+  `last_seen_at` is `null` until the first stored batch (unknown stays unknown).
+- `POST /api/hosts` body `{"name"}` → `201 {"host":{id,name,created_at,last_seen_at},
+  "server_url","secret","expires_at"}`. Same semantics as `admin host create` (secret shown once, valid
+  1 h, `409` on a duplicate name, `400` on an invalid name). `server_url` is
+  `SMOTRYASHCHIY_PUBLIC_URL` when set (validated `http(s)` URL, required in production), otherwise
+  derived from the request (`https` when the request is TLS or cookies are `Secure`).
+- `GET /api/metrics?step=N` as in §4.3.
+- **Static delivery.** The SPA is built to `web/dist` and embedded (`go:embed`). A stub
+  `dist/index.html` is committed so `go build` never needs node. Paths not under `/api/` and not a
+  health probe are public static content (no secrets live in the bundle): `/` and unknown non-file paths
+  return `index.html` (SPA fallback, `no-cache`), `/assets/*` are content-hashed (`immutable`, 1 year).
+  Everything under `/api/` keeps §3's rules: session required except `POST /api/auth/login`,
+  `GET /api/auth/session` and `POST /api/enroll`. Unknown `/api/*` paths answer `401`/`404` JSON, never `index.html`.
+- **Security headers** on static responses: `Content-Security-Policy: default-src 'self';
+  connect-src 'self'; img-src 'self' data:; style-src 'self'; frame-ancestors 'none'`,
+  `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`.
+- **Frontend gates.** Fast Gate adds `npm run typecheck`; Full Gate adds `npm ci`, typecheck, unit
+  tests (with component-level axe checks) and the production build (before `go build`), plus a bundle
+  budget of 200 KB gzip for JavaScript.
+
 ## 4a. Other interfaces
 
 `/healthz` and `/health/ready` (exact release) exist since Change 01; UI/admin APIs are specified
@@ -239,9 +266,33 @@ in the change that introduces them.
 
 ## 5. UI
 
-Reuses the predecessor's visual authority: `docs/reference/PRODUCT.md`, `docs/reference/DESIGN.md`
-and `docs/reference/ui-references/` (dark, compact, mono-first terminal vocabulary; status never
-color-only; WCAG 2.2 AA). Pages: Dashboard, Hosts, Host detail, Uptime, Login. (Alerts/Notifications is deferred with alerting, see §7.)
+**One page, no navigation.** Opening `/` shows a single dashboard; separators are whitespace and
+hairlines, never cards. It is the simplification of the predecessor's Dashboard / Sources /
+Notifications / Source-detail structure (`docs/reference/`), which stays frozen as a design donor.
+Alerts/Notifications is deferred with alerting (§7); the uptime section appears with the prober.
+
+Layout, top to bottom: command bar (`$ smotryashchiy`, live-connection text, `+ add host`, `logout`),
+**STATUS** strip (hosts and freshness counts, average CPU/memory), **HOSTS** ledger, **EVENTS** log.
+A host row shows name, freshness state, four sparklines with current values (CPU, memory, disk, network)
+and last-seen age; activating it expands the row in place (one open at a time) to large charts, disks per
+mount, network per interface, load, swap, checks and that host's events. The window is fixed at 1 hour;
+there are no filters, tabs or theme switch. Login is not a page: the login form replaces the dashboard
+whenever an API call answers `401`.
+
+Rules: host state is derived from freshness only (`OK` ≤ 45 s since `last_seen_at`, `STALE` ≤ 5 min,
+`OFFLINE` beyond, `NEW` when never seen) and is always textual; missing data renders `—`, never `0`;
+no threshold colors (alerting is deferred). Design baseline: `docs/reference/DESIGN.md` tokens (near-black
+canvas, one mono stack, 2 px radius, hairlines, no shadows), following `prefers-color-scheme` with dark as
+the default. Every chart has a textual alternative; keyboard use and narrow widths (rows stack ≤ 900 px)
+are first-class; WCAG 2.2 AA.
+
+**Chart layout contract** (uPlot): legends, tick labels and tooltips never extend beyond the chart
+container at any width; the page never scrolls horizontally; empty or single-point series show a text
+state instead of a broken canvas.
+
+**Stack** (confirmed in Change 06): Vite, React, TypeScript (strict), `@base-ui/react` for every
+control it offers (Accordion, Dialog, Field/Input, Button, Tooltip), `uplot` for charts, CSS Modules,
+npm. Vitest + Testing Library for unit tests; Playwriter drives the real browser checks.
 
 ## 6. Non-Functional
 
@@ -266,6 +317,4 @@ within a few seconds. Agent footprint: small enough to run on the smallest VPS.
 
 - Stage-2 spike: local proof is Change 04's first item; reliability across common VPS/NAT setups is
   confirmed at Stage 7, otherwise fall back to HTTPS push.
-- Frontend stack for the embedded SPA (predecessor used React + Base UI + uPlot + Vite): confirm in
-  the UI change.
 - Supported agent platforms: Linux amd64/arm64 for MVP (assumption).

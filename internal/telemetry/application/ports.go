@@ -29,6 +29,8 @@ type MetricQuery struct {
 	To     *time.Time
 	Limit  int
 	Latest bool
+	// Step, when > 0, keeps only the newest sample of every Step-second bucket per series.
+	Step int
 }
 
 // Resolution selects raw samples or hourly rollups for a metric query.
@@ -56,6 +58,8 @@ type Repository interface {
 	Metrics(ctx context.Context, q MetricQuery) ([]domain.MetricPoint, error)
 	Checks(ctx context.Context, q CheckQuery) ([]domain.CheckState, error)
 	Events(ctx context.Context, q EventQuery) ([]domain.EventEntry, error)
+	// Hosts lists every registered host ordered by name.
+	Hosts(ctx context.Context) ([]domain.Host, error)
 	// MetricRollups returns hourly aggregates, oldest first; From/To bound the hour start.
 	MetricRollups(ctx context.Context, q MetricQuery) ([]domain.RollupPoint, error)
 }

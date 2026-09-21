@@ -44,6 +44,7 @@ func NewHandlers(svc *application.Service, opts Options) *Handlers {
 func (h *Handlers) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/auth/login", h.login)
 	mux.HandleFunc("POST /api/auth/logout", h.logout)
+	mux.HandleFunc("GET /api/auth/session", h.sessionState)
 }
 
 type loginRequest struct {
@@ -79,6 +80,18 @@ func (h *Handlers) login(w http.ResponseWriter, r *http.Request) {
 	h.loginLimiter.success(clientIP)
 	h.setCookie(w, r, session.Token, session.ExpiresAt)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// sessionState reports whether the request carries a valid session. It answers 200 in both cases:
+// "not logged in" is an answer here, not an error, so browsers do not log a failed request.
+func (h *Handlers) sessionState(w http.ResponseWriter, r *http.Request) {
+	authenticated := false
+	if cookie, err := r.Cookie(sessionCookieName); err == nil {
+		authenticated = h.service.ValidateSession(cookie.Value) == nil
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	_ = json.NewEncoder(w).Encode(map[string]bool{"authenticated": authenticated})
 }
 
 func (h *Handlers) logout(w http.ResponseWriter, r *http.Request) {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"net/url"
 	"os"
 	"regexp"
 	"strconv"
@@ -36,6 +37,9 @@ type Config struct {
 	TunnelCIDR netip.Prefix
 	// PublicEndpoint is the host:port (UDP) agents dial for WireGuard; empty until configured.
 	PublicEndpoint string
+	// PublicURL is the http(s) base URL agents use to enroll and the UI shows in enrollment
+	// commands; empty means "derive it from the request" (docs/SPEC.md §4d).
+	PublicURL string
 }
 
 const (
@@ -50,6 +54,7 @@ const (
 	envWGPort     = "SMOTRYASHCHIY_WG_PORT"
 	envTunnelCIDR = "SMOTRYASHCHIY_TUNNEL_CIDR"
 	envEndpoint   = "SMOTRYASHCHIY_PUBLIC_ENDPOINT"
+	envPublicURL  = "SMOTRYASHCHIY_PUBLIC_URL"
 
 	defaultWGPort     = 51820
 	defaultTunnelCIDR = "10.99.0.0/16"
@@ -99,6 +104,10 @@ func Load(defaultRelease string) (Config, error) {
 			}
 		}
 	}
+	publicURL, err := parsePublicURL(os.Getenv(envPublicURL))
+	if err != nil {
+		return Config{}, err
+	}
 	cfg := Config{
 		Addr:              getOr(envAddr, ":8080"),
 		DBPath:            getOr(envDBPath, "./data/smotryashchiy.db"),
@@ -112,6 +121,7 @@ func Load(defaultRelease string) (Config, error) {
 		WGPort:              wgPort,
 		TunnelCIDR:          tunnelCIDR,
 		PublicEndpoint:      endpoint,
+		PublicURL:           publicURL,
 	}
 	if cfg.Production {
 		if !releasePattern.MatchString(cfg.Release) {
@@ -119,6 +129,9 @@ func Load(defaultRelease string) (Config, error) {
 		}
 		if !cfg.SecureCookies {
 			return Config{}, fmt.Errorf("config: %s must be true in production", envSecure)
+		}
+		if cfg.PublicURL == "" {
+			return Config{}, fmt.Errorf("config: %s (the URL agents use to enroll) is required in production", envPublicURL)
 		}
 		if cfg.PublicEndpoint == "" {
 			return Config{}, fmt.Errorf("config: %s (agent-facing WireGuard host:port) is required in production", envEndpoint)
@@ -159,6 +172,20 @@ func getPositiveInt(key string, fallback int) (int, error) {
 		return 0, fmt.Errorf("config: %s must be a positive integer number of days, got %q", key, value)
 	}
 	return parsed, nil
+}
+
+// parsePublicURL accepts an empty value or an absolute http(s) URL without credentials, query or
+// fragment; a trailing slash is removed so it composes with "/api/...".
+func parsePublicURL(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return "", fmt.Errorf("config: %s must be an absolute http(s) URL without credentials, query or fragment, got %q", envPublicURL, raw)
+	}
+	return strings.TrimRight(raw, "/"), nil
 }
 
 func validPort(raw string) bool {

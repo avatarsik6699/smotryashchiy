@@ -86,6 +86,7 @@ func newEnv(t *testing.T) *env {
 		PublicKey: tunnel.PublicKey(), Endpoint: fmt.Sprintf("127.0.0.1:%d", tunnel.UDPPort()), TunnelIP: tunnel.TunnelIP(),
 	}, func() time.Time { return e.enrollNow })
 	NewEnrollHandlers(enroll).Register(mux)
+	NewHostsHandlers(svc, enroll, "", false).Register(mux)
 	tunnelLn, err := tunnel.Listen(transport.IngestPort)
 	if err != nil {
 		t.Fatal(err)

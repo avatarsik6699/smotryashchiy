@@ -32,6 +32,28 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: go.sum
 
+      - name: Set up Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: web/.nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Frontend install
+        run: npm --prefix web ci
+
+      - name: Frontend typecheck
+        run: npm --prefix web run typecheck
+
+      - name: Frontend tests
+        run: npm --prefix web test
+
+      - name: Frontend build
+        run: npm --prefix web run build
+
+      - name: Bundle budget
+        run: bash scripts/bundle-budget.sh
+
       - name: Formatting
         run: test -z "$(gofmt -l .)"
 

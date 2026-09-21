@@ -79,6 +79,36 @@ Carry these into the first contract tests instead of rediscovering them in produ
 - `memory.used_bytes` = `MemTotal - MemAvailable` (what applications cannot get without swapping),
   while `free` prints `total - free - buff/cache`. Compare against `MemAvailable`, not `free`'s used column.
 
+### Other browser extensions pollute the console of a strict-CSP page
+
+- **Symptoms**: in the user's real Chrome (via Playwriter) the console shows `Applying inline style
+  violates ... 'style-src 'self''` and `p is not a function`, and the DOM contains dozens of foreign
+  `<style>` elements (`.spantree-*`), although the app itself has no violation.
+- **Root cause**: third-party extensions inject styles/scripts into every page; our CSP blocks them.
+- **Fix**: none in code. Judge the app's console in a clean profile (Playwright MCP launches Chrome with
+  `--disable-extensions`, an allowed fallback), and confirm with a `securitypolicyviolation` listener.
+
+### Base UI `Field.Root invalid` blocks resubmitting a form
+
+- **Symptoms**: after a wrong password the login form ignores the next submit.
+- **Root cause**: Base UI treats a form with an invalid field as invalid and skips `onFormSubmit`; the
+  error was only cleared inside the submit handler, a deadlock.
+- **Fix**: convey server-side errors with `aria-invalid` and text, never with the `invalid` prop
+  (`Login.tsx`, covered by `clears the previous error when submitting again`).
+
+### A logged-out page load must not leave a red 401 in the console
+
+- **Symptoms**: probing the session with an authenticated endpoint logs `Failed to load resource ... 401`.
+- **Fix**: the SPA asks `GET /api/auth/session`, which always answers 200. The only 401 left in a
+  normal flow is a genuinely wrong password.
+
+### Playwright MCP runs Chrome on Windows
+
+- **Symptoms**: `browser_take_screenshot` with a relative `filename` fails with `ENOENT C:\home\...`.
+- **Fix**: omit `filename`; files land in `C:\Users\user\AppData\Local\Temp\.playwright-mcp`
+  (`/mnt/c/Users/user/AppData/Local/Temp/.playwright-mcp` from WSL). Playwriter, driven from WSL,
+  accepts WSL absolute paths.
+
 ### Docker-owned files break host operations (`EACCES` / `EPERM` / read-only)
 
 - **Symptoms**: file operations fail with `EACCES`, `EPERM`, "Permission denied" or

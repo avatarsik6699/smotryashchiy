@@ -20,6 +20,7 @@ import (
 	telemetryinfra "github.com/avatarsik6699/smotryashchiy/internal/telemetry/infrastructure"
 	telemetryhttp "github.com/avatarsik6699/smotryashchiy/internal/telemetry/interfaces/http"
 	"github.com/avatarsik6699/smotryashchiy/internal/transport"
+	"github.com/avatarsik6699/smotryashchiy/web"
 )
 
 const shutdownTimeout = 10 * time.Second
@@ -69,6 +70,7 @@ func runServer(stdout io.Writer) error {
 	}
 	defer tunnel.Close()
 	telemetryhttp.NewEnrollHandlers(enrollment).Register(srv.Mux)
+	telemetryhttp.NewHostsHandlers(telemetrySvc, enrollment, cfg.PublicURL, cfg.SecureCookies).Register(srv.Mux)
 	tunnelLn, err := tunnel.Listen(transport.IngestPort)
 	if err != nil {
 		return err
@@ -80,6 +82,7 @@ func runServer(stdout io.Writer) error {
 	}()
 	maintenance := telemetryapp.NewMaintenance(store, cfg.RawRetentionDays, cfg.RollupRetentionDays, time.Now)
 	go maintenance.Run(ctx)
+	srv.Mux.Handle("/", web.Handler()) // embedded SPA; the auth middleware keeps /api/ gated
 	srv.Use(authhttp.RequireSession(auth))
 
 	serveErr := make(chan error, 1)

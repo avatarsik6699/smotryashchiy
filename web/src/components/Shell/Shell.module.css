@@ -1,0 +1,42 @@
+.shell {
+  min-height: 100vh;
+}
+
+.bar {
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--page-pad);
+  border-bottom: 1px solid var(--hairline);
+  background: var(--canvas);
+}
+
+.brand {
+  font-weight: 650;
+}
+
+.prompt {
+  color: var(--accent);
+}
+
+.action {
+  padding: 6px 9px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: transparent;
+  cursor: pointer;
+}
+
+.body {
+  max-width: var(--page-max);
+  margin: 0 auto;
+  padding: 28px var(--page-pad) 48px;
+}
+
+.muted {
+  margin: 0;
+  color: var(--text-muted);
+}

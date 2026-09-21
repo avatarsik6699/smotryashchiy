@@ -1,0 +1,56 @@
+/*
+ * Design tokens from docs/reference/DESIGN.md ("The Quiet Source Ledger"): near-black canvas, one mono
+ * stack, hairlines instead of shadows, 2px radius. Dark is the default; light applies only when the
+ * system asks for it (no in-app switch). Health colors describe state only, never chrome.
+ */
+:root {
+  color-scheme: dark;
+
+  --canvas: #080b0d;
+  --surface: #0c1114;
+  --raised: #11181c;
+  --hairline: #263137;
+  --text: #d8e0df;
+  --text-muted: #7e8c8c;
+  --accent: #8bb89d; /* operator green: active/primary cues */
+  --focus: #b6d4c0; /* reserved for the focus outline */
+  --on-accent: #080b0d;
+
+  --status-ok: #70c28d;
+  --status-warn: #d6ad68;
+  --status-critical: #de7b7f;
+  --status-unreachable: #617074;
+
+  --font: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, SFMono-Regular, Consolas, monospace;
+  --radius: 2px;
+
+  --space-1: 8px;
+  --space-2: 12px;
+  --space-3: 16px;
+  --space-4: 24px;
+  --space-5: 32px;
+
+  --page-max: 1440px;
+  --page-pad: clamp(16px, 3vw, 44px);
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+
+    --canvas: #f5f7f6;
+    --surface: #ecf0ef;
+    --raised: #e2e8e6;
+    --hairline: #c3cfcc;
+    --text: #182022;
+    --text-muted: #55646a;
+    --accent: #2f6f4d;
+    --focus: #1d5a3b;
+    --on-accent: #f5f7f6;
+
+    --status-ok: #2a7548;
+    --status-warn: #84601d;
+    --status-critical: #aa3238;
+    --status-unreachable: #5d6b6f;
+  }
+}

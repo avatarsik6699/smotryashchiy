@@ -1,0 +1,71 @@
+.page {
+  display: grid;
+  min-height: 100vh;
+  padding: var(--space-4) var(--page-pad);
+  place-items: center;
+}
+
+.form {
+  display: grid;
+  gap: var(--space-3);
+  width: 100%;
+  max-width: 360px;
+  min-width: 0;
+}
+
+.title {
+  margin: 0 0 var(--space-2);
+  font-size: clamp(1.25rem, 4vw, 1.5rem);
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.prompt {
+  color: var(--accent);
+}
+
+.field {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.label {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.input {
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--canvas);
+}
+
+/* An invalid field keeps its boundary and is explained by text below; never color alone. */
+.input[aria-invalid="true"] {
+  border-style: dashed;
+}
+
+.error {
+  min-height: 1.45em;
+  margin: 0;
+  color: var(--status-critical);
+  font-size: 0.875rem;
+}
+
+.button {
+  padding: 8px 12px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: var(--on-accent);
+  cursor: pointer;
+}
+
+.button[data-disabled] {
+  opacity: 0.6;
+  cursor: default;
+}

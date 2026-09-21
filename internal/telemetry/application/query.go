@@ -16,10 +16,35 @@ const (
 	MaxEventLimit      = 500
 )
 
+// Step bounds in seconds for downsampled metric reads (docs/SPEC.md §4.3).
+const (
+	MinStepSeconds = 10
+	MaxStepSeconds = 3600
+)
+
+// Hosts lists every registered host ordered by name.
+func (s *Service) Hosts(ctx context.Context) ([]domain.Host, error) { return s.repo.Hosts(ctx) }
+
+func validateStep(q MetricQuery) error {
+	if q.Step == 0 {
+		return nil
+	}
+	if q.Step < MinStepSeconds || q.Step > MaxStepSeconds {
+		return apierror.Invalid("step must be between " + strconv.Itoa(MinStepSeconds) + " and " + strconv.Itoa(MaxStepSeconds) + " seconds")
+	}
+	if q.Latest {
+		return apierror.Invalid("step cannot be combined with latest")
+	}
+	return nil
+}
+
 // Metrics returns samples matching q. latest is incompatible with a time range.
 func (s *Service) Metrics(ctx context.Context, q MetricQuery) ([]domain.MetricPoint, error) {
 	if q.Latest && (q.From != nil || q.To != nil) {
 		return nil, apierror.Invalid("latest cannot be combined with from/to")
+	}
+	if err := validateStep(q); err != nil {
+		return nil, err
 	}
 	if q.From != nil && q.To != nil && q.From.After(*q.To) {
 		return nil, apierror.Invalid("from must not be after to")
@@ -36,6 +61,9 @@ func (s *Service) Metrics(ctx context.Context, q MetricQuery) ([]domain.MetricPo
 func (s *Service) MetricRollups(ctx context.Context, q MetricQuery) ([]domain.RollupPoint, error) {
 	if q.Latest {
 		return nil, apierror.Invalid("latest is only available with resolution=raw")
+	}
+	if q.Step != 0 {
+		return nil, apierror.Invalid("step is only available with resolution=raw")
 	}
 	if q.From != nil && q.To != nil && q.From.After(*q.To) {
 		return nil, apierror.Invalid("from must not be after to")

@@ -17,3 +17,8 @@ web/dist/
 
 # Local agent state
 .claude/settings.local.json
+
+# Built web UI (only .gitkeep is tracked so `go build` works without node)
+web/dist/*
+!web/dist/.gitkeep
+web/node_modules/

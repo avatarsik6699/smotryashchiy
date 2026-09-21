@@ -89,6 +89,10 @@ func (h *Handlers) metrics(w http.ResponseWriter, r *http.Request) {
 		apierror.Write(w, err)
 		return
 	}
+	if query.Step, err = parseInt(q, "step"); err != nil {
+		apierror.Write(w, err)
+		return
+	}
 	if resolution == application.ResolutionHour {
 		rollups, err := h.service.MetricRollups(r.Context(), query)
 		if err != nil {

@@ -16,6 +16,15 @@ Carry these into the first contract tests instead of rediscovering them in produ
   minutes in the future; replayed overlapping records are stored once, not re-alerted.
 - **Unknown must stay unknown.** No data, stale data and healthy data are three distinct UI states.
 
+### SQLite `INSERT OR IGNORE` swallows constraint violations other than duplicates
+
+- **Symptoms**: a record that violates a `CHECK` or `NOT NULL` constraint is silently skipped and
+  counted as a "duplicate"; no error, no data.
+- **Root cause**: `OR IGNORE` applies to every constraint class, not only uniqueness.
+- **Fix**: dedupe with `INSERT ... ON CONFLICT DO NOTHING`, which only skips uniqueness conflicts
+  and still fails loudly on `CHECK`/`NOT NULL`. Covered by
+  `TestStoreFailureMidBatchRollsBackEverything`.
+
 ### Docker-owned files break host operations (`EACCES` / `EPERM` / read-only)
 
 - **Symptoms**: file operations fail with `EACCES`, `EPERM`, "Permission denied" or

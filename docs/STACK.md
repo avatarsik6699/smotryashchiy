@@ -66,6 +66,9 @@ printf '%s\n' "$PASSWORD" | go run ./cmd/smotryashchiy admin set-password   # >=
 
 ```
 cmd/smotryashchiy/   # single entrypoint, mode subcommands
-internal/            # bounded contexts, ports between them (no cross-imports of internals)
+internal/platform/   # config, db (migrations), httpserver, apierror
+internal/auth/       # admin password, sessions (domain/application/infrastructure/interfaces)
+internal/telemetry/  # Metric/Check/Event contract, ingest service, SQLite store, read API
+                     # bounded contexts talk through ports (application interfaces), not internals
 docs/                # SPEC, STACK, playbooks, changes/, reference/ (predecessor design donors)
 ```

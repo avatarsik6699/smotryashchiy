@@ -1,6 +1,7 @@
 package db
 
 import (
+	"io/fs"
 	"path/filepath"
 	"testing"
 )
@@ -33,9 +34,13 @@ func TestMigrateIsIdempotent(t *testing.T) {
 			t.Fatalf("run %d: %v", i, err)
 		}
 	}
+	embedded, err := fs.Glob(migrationsFS, "migrations/*.sql")
+	if err != nil || len(embedded) == 0 {
+		t.Fatalf("embedded migrations = %v, err = %v", embedded, err)
+	}
 	var applied int
-	if err := sqlDB.QueryRow(`SELECT COUNT(1) FROM schema_migrations`).Scan(&applied); err != nil || applied != 1 {
-		t.Fatalf("applied = %d, err = %v", applied, err)
+	if err := sqlDB.QueryRow(`SELECT COUNT(1) FROM schema_migrations`).Scan(&applied); err != nil || applied != len(embedded) {
+		t.Fatalf("applied = %d, want %d, err = %v", applied, len(embedded), err)
 	}
 	if _, err := sqlDB.Exec(`INSERT INTO settings (key, value) VALUES ('k', 'v')`); err != nil {
 		t.Fatalf("settings table missing: %v", err)

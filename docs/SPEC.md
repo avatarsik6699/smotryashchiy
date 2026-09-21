@@ -7,7 +7,7 @@
 
 | Field | Value |
 |-------|-------|
-| Document Version | `v1.0` |
+| Document Version | `v1.1` |
 | Date | `2026-09-19` |
 | Architect / Owner | `avatarsik666@gmail.com` |
 | Stack | See [docs/STACK.md](./STACK.md) |
@@ -92,11 +92,50 @@ once and never re-alerted. Additive-only versioning after v1.
 - **Auth.** Single admin password (bcrypt), HttpOnly/SameSite=Lax session cookie, failed-login
   rate limit, hash initialized only via the stdin-only `admin` command.
 
-## 4. Interfaces (to be detailed per change)
+## 4. Telemetry contract and storage (Change 02)
 
-REST + WS for the UI, ingest over the tunnel, `/healthz` and `/health/ready` (exact release SHA).
-The API surface is specified in the change that introduces it; the codebase is then the source of
-truth.
+### 4.1 Wire batch (schema_version `1.0`, additive-only afterwards)
+
+```json
+{"schema_version":"1.0",
+ "metrics":[{"name":"cpu.usage_percent","ts":"2026-09-19T12:00:00Z","value":0,"labels":{"core":"0"}}],
+ "checks":[{"name":"disk.root","ts":"2026-09-19T12:00:00Z","status":"ok","meta":{}}],
+ "events":[{"ts":"2026-09-19T12:00:00Z","level":"warn","message":"ban 203.0.113.7","labels":{"jail":"sshd"}}]}
+```
+
+Validation (rejects the whole batch with a field-addressed error; nothing is partially stored):
+- `name`: `^[a-z][a-z0-9_.]{0,127}$`. `value`: finite number; **zero is valid and must be stored**.
+- `status`: `ok|warn|critical`. `level`: `info|warn|error|critical`. `message` ≤ 2048 bytes.
+- `labels`: ≤ 16 keys, key `^[a-z][a-z0-9_]{0,63}$`, value ≤ 128 bytes. `meta`: JSON object ≤ 4 KiB.
+- `ts`: RFC 3339, normalized to UTC; producer time more than 5 minutes in the future is rejected.
+- ≤ 1000 records per batch; `Idempotency-Key` ≤ 128 bytes.
+
+### 4.2 Storage semantics
+
+Tables `hosts` (id, name, created_at, last_seen_at), `metrics`, `checks`, `events`,
+`ingestion_batches (host_id, idempotency_key, received_at, record_count)`; every telemetry row is
+attributed to a host and carries `schema_version`. Record identity, enforced by unique indexes:
+metric = (host, name, canonical labels, ts); check = (host, name, ts); event = (host, ts, level,
+message, canonical labels). A batch is applied in one transaction. Re-sending an
+`Idempotency-Key` is a no-op reported as `replayed`. Overlapping records from a *different* batch
+are stored once and reported as `duplicates`, so later alert evaluation can skip them. A stored
+batch advances `hosts.last_seen_at` to the receipt time; producer `ts` never does.
+
+### 4.3 Read API (session required, read-only)
+
+| Verb | Path | Behavior |
+|------|------|----------|
+| GET | `/api/metrics?host=&name=&from=&to=&limit=&latest=` | time series ordered by `ts` ascending, `limit` default 1000, max 5000; `latest=true` returns the newest point per (name, labels) and is incompatible with `from`/`to` |
+| GET | `/api/checks?host=&name=` | newest Check per (host, name) |
+| GET | `/api/events?host=&level=&limit=` | newest first, `limit` default 100, max 500 |
+
+Later stages add the HTTP ingest endpoint (Stage 2, over the tunnel), rollups/retention and the
+WebSocket stream (Change 03). The codebase becomes the source of truth once each is built.
+
+## 4a. Other interfaces
+
+`/healthz` and `/health/ready` (exact release) exist since Change 01; UI/admin APIs are specified
+in the change that introduces them.
 
 ## 5. UI
 

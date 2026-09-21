@@ -16,6 +16,9 @@ import (
 	"github.com/avatarsik6699/smotryashchiy/internal/platform/config"
 	"github.com/avatarsik6699/smotryashchiy/internal/platform/db"
 	"github.com/avatarsik6699/smotryashchiy/internal/platform/httpserver"
+	telemetryapp "github.com/avatarsik6699/smotryashchiy/internal/telemetry/application"
+	telemetryinfra "github.com/avatarsik6699/smotryashchiy/internal/telemetry/infrastructure"
+	telemetryhttp "github.com/avatarsik6699/smotryashchiy/internal/telemetry/interfaces/http"
 )
 
 const shutdownTimeout = 10 * time.Second
@@ -53,6 +56,7 @@ func runServer(stdout io.Writer) error {
 		SecureCookies:     cfg.SecureCookies,
 		TrustedProxyCIDRs: cfg.TrustedProxyCIDRs,
 	}).Register(srv.Mux)
+	telemetryhttp.NewHandlers(telemetryapp.NewService(telemetryinfra.NewStore(sqlDB))).Register(srv.Mux)
 	srv.Use(authhttp.RequireSession(auth))
 
 	serveErr := make(chan error, 1)

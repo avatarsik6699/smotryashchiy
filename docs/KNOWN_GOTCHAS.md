@@ -25,6 +25,28 @@ Carry these into the first contract tests instead of rediscovering them in produ
   and still fails loudly on `CHECK`/`NOT NULL`. Covered by
   `TestStoreFailureMidBatchRollsBackEverything`.
 
+### Hijacked WebSocket connections outlive `http.Server.Shutdown`
+
+- **Symptoms**: graceful shutdown waits out its timeout, or stream clients stay connected after the
+  server is told to stop.
+- **Root cause**: `Shutdown` does not track hijacked connections, and `websocket.Accept` hijacks.
+- **Fix**: `telemetry/application.Hub.Close()` is called before `srv.Shutdown`; every stream handler
+  exits when its subscription channel closes. New long-lived handlers must do the same.
+
+### Raw purge is gated on rollups and the 24 h re-aggregation window
+
+- **Symptoms**: raw rows older than the TTL are still present; or, if the gate were removed, a
+  rollup for a late-data hour would be recomputed from partially purged raw data and shrink.
+- **Root cause**: `Maintenance.Purge` deletes raw rows only before `min(now - TTL, rolled_through -
+  24h)` and does nothing raw until the first rollup finished. A permanently failing rollup therefore
+  stops raw purging (logged as `telemetry maintenance job failed`).
+- **Fix**: fix the rollup error; do not loosen the gate.
+
+### `INSERT ... SELECT ... ON CONFLICT` needs a `WHERE`
+
+- **Symptoms**: SQL parse ambiguity when an upsert takes its rows from a `SELECT`.
+- **Fix**: keep an explicit `WHERE` (`RollupHour` has one) on any `INSERT ... SELECT ... ON CONFLICT`.
+
 ### Docker-owned files break host operations (`EACCES` / `EPERM` / read-only)
 
 - **Symptoms**: file operations fail with `EACCES`, `EPERM`, "Permission denied" or

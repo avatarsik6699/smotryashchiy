@@ -13,6 +13,7 @@
 |-------|-----------|
 | Backend | Go 1.26.6 minimum (`go.mod`; earlier patches carry fixed stdlib CVEs), single binary with `server` / `agent` / `admin` modes |
 | Database | SQLite via `modernc.org/sqlite` (pure Go, WAL, single writer), embedded forward-only migrations |
+| Realtime | `github.com/coder/websocket` (server-to-client stream at `/api/stream`) |
 | Frontend | Embedded static SPA — pending (see SPEC §8) |
 | Transport | Userspace WireGuard inside the binary — pending Stage-2 spike |
 | CI | GitHub Actions (`.github/workflows/ci.yml`) on pull requests and pushes to `main` |
@@ -25,6 +26,16 @@ cp .env.example .env       # optional; every variable has a development default
 go run ./cmd/smotryashchiy server   # prints a one-time development admin password
 printf '%s\n' "$PASSWORD" | go run ./cmd/smotryashchiy admin set-password   # >= 24 bytes, stdin only
 ```
+
+## Environment
+
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `SMOTRYASHCHIY_RAW_RETENTION_DAYS` | `30` | TTL of raw metrics, checks, events and ingestion batches |
+| `SMOTRYASHCHIY_ROLLUP_RETENTION_DAYS` | `396` | TTL of hourly metric rollups (13 months) |
+
+Other variables (`SMOTRYASHCHIY_ADDR`, `_DB_PATH`, `_PRODUCTION`, `_RELEASE`, `_SECURE_COOKIES`,
+`_TRUSTED_PROXY_CIDRS`) are documented in `internal/platform/config`.
 
 ## Fast Gate
 
@@ -68,7 +79,8 @@ printf '%s\n' "$PASSWORD" | go run ./cmd/smotryashchiy admin set-password   # >=
 cmd/smotryashchiy/   # single entrypoint, mode subcommands
 internal/platform/   # config, db (migrations), httpserver, apierror
 internal/auth/       # admin password, sessions (domain/application/infrastructure/interfaces)
-internal/telemetry/  # Metric/Check/Event contract, ingest service, SQLite store, read API
+internal/telemetry/  # Metric/Check/Event contract, ingest service, SQLite store, read API,
+                     # hourly rollups + retention jobs (Maintenance), live stream hub + WebSocket
                      # bounded contexts talk through ports (application interfaces), not internals
 docs/                # SPEC, STACK, playbooks, changes/, reference/ (predecessor design donors)
 ```

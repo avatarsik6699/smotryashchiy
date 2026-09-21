@@ -25,6 +25,10 @@ type Config struct {
 	SecureCookies bool
 	// TrustedProxyCIDRs are the only peers allowed to supply a forwarded client address.
 	TrustedProxyCIDRs []netip.Prefix
+	// RawRetentionDays is the TTL of raw metrics, checks and events (docs/SPEC.md §4.5).
+	RawRetentionDays int
+	// RollupRetentionDays is the TTL of hourly metric rollups.
+	RollupRetentionDays int
 }
 
 const (
@@ -34,6 +38,11 @@ const (
 	envRelease    = "SMOTRYASHCHIY_RELEASE"
 	envSecure     = "SMOTRYASHCHIY_SECURE_COOKIES"
 	envProxies    = "SMOTRYASHCHIY_TRUSTED_PROXY_CIDRS"
+	envRawDays    = "SMOTRYASHCHIY_RAW_RETENTION_DAYS"
+	envRollupDays = "SMOTRYASHCHIY_ROLLUP_RETENTION_DAYS"
+
+	defaultRawRetentionDays    = 30
+	defaultRollupRetentionDays = 396 // 13 months
 )
 
 var releasePattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
@@ -53,6 +62,14 @@ func Load(defaultRelease string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	rawDays, err := getPositiveInt(envRawDays, defaultRawRetentionDays)
+	if err != nil {
+		return Config{}, err
+	}
+	rollupDays, err := getPositiveInt(envRollupDays, defaultRollupRetentionDays)
+	if err != nil {
+		return Config{}, err
+	}
 	cfg := Config{
 		Addr:              getOr(envAddr, ":8080"),
 		DBPath:            getOr(envDBPath, "./data/smotryashchiy.db"),
@@ -60,6 +77,9 @@ func Load(defaultRelease string) (Config, error) {
 		Release:           getOr(envRelease, defaultRelease),
 		SecureCookies:     secureCookies,
 		TrustedProxyCIDRs: proxies,
+
+		RawRetentionDays:    rawDays,
+		RollupRetentionDays: rollupDays,
 	}
 	if cfg.Production {
 		if !releasePattern.MatchString(cfg.Release) {
@@ -90,6 +110,18 @@ func getBool(key string, fallback bool) (bool, error) {
 	parsed, err := strconv.ParseBool(value)
 	if err != nil {
 		return false, fmt.Errorf("config: %s must be a boolean: %w", key, err)
+	}
+	return parsed, nil
+}
+
+func getPositiveInt(key string, fallback int) (int, error) {
+	value, ok := os.LookupEnv(key)
+	if !ok || strings.TrimSpace(value) == "" {
+		return fallback, nil
+	}
+	parsed, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil || parsed <= 0 {
+		return 0, fmt.Errorf("config: %s must be a positive integer number of days, got %q", key, value)
 	}
 	return parsed, nil
 }

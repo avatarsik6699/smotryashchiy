@@ -3,6 +3,7 @@ module github.com/avatarsik6699/smotryashchiy
 go 1.26.6
 
 require (
+	github.com/coder/websocket v1.8.15
 	golang.org/x/crypto v0.57.0
 	modernc.org/sqlite v1.59.0
 )

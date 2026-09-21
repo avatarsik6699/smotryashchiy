@@ -79,3 +79,16 @@ type EventEntry struct {
 	HostID string
 	Event
 }
+
+// RollupPoint is one hourly aggregate of a metric series. TS is the start of the hour (UTC).
+// A zero-only hour has Count > 0 and Min = Max = Avg = 0: zero is a value, absence is no point.
+type RollupPoint struct {
+	HostID string
+	Name   string
+	Labels map[string]string
+	TS     time.Time
+	Count  int64
+	Min    float64
+	Max    float64
+	Avg    float64
+}

@@ -5,6 +5,7 @@ package http
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -26,8 +27,10 @@ import (
 var clock = time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)
 
 type env struct {
+	rawDB   *sql.DB
 	store   *infrastructure.Store
 	svc     *application.Service
+	hub     *application.Hub
 	handler http.Handler
 	host    domain.Host
 	cookie  *http.Cookie
@@ -44,7 +47,8 @@ func newEnv(t *testing.T) *env {
 		t.Fatal(err)
 	}
 	store := infrastructure.NewStore(sqlDB)
-	svc := application.NewServiceWithClock(store, func() time.Time { return clock })
+	hub := application.NewHub()
+	svc := application.NewServiceWithClock(store, func() time.Time { return clock }).WithPublisher(hub)
 	host, err := store.CreateHost(context.Background(), "web-1", clock)
 	if err != nil {
 		t.Fatal(err)
@@ -58,6 +62,7 @@ func newEnv(t *testing.T) *env {
 	mux := http.NewServeMux()
 	authhttp.NewHandlers(auth, authhttp.Options{}).Register(mux)
 	NewHandlers(svc).Register(mux)
+	NewStreamHandlers(hub).Register(mux)
 	handler := authhttp.RequireSession(auth)(mux)
 
 	login := httptest.NewRecorder()
@@ -65,7 +70,7 @@ func newEnv(t *testing.T) *env {
 	if login.Code != http.StatusNoContent {
 		t.Fatalf("login = %d", login.Code)
 	}
-	return &env{store: store, svc: svc, handler: handler, host: host, cookie: login.Result().Cookies()[0]}
+	return &env{rawDB: sqlDB, store: store, svc: svc, hub: hub, handler: handler, host: host, cookie: login.Result().Cookies()[0]}
 }
 
 func (e *env) get(t *testing.T, target string, authed bool) (int, string) {

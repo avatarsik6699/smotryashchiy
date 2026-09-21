@@ -9,7 +9,7 @@ const sha = "0123456789abcdef0123456789abcdef01234567"
 
 func clearEnv(t *testing.T) {
 	t.Helper()
-	for _, k := range []string{envAddr, envDBPath, envProduction, envRelease, envSecure, envProxies} {
+	for _, k := range []string{envAddr, envDBPath, envProduction, envRelease, envSecure, envProxies, envRawDays, envRollupDays} {
 		t.Setenv(k, "")
 	}
 }
@@ -74,5 +74,31 @@ func TestLoadRejectsInvalidBoolean(t *testing.T) {
 	t.Setenv(envProduction, "maybe")
 	if _, err := Load("development"); err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestLoadRetentionDefaultsAndOverrides(t *testing.T) {
+	clearEnv(t)
+	cfg, err := Load("development")
+	if err != nil || cfg.RawRetentionDays != 30 || cfg.RollupRetentionDays != 396 {
+		t.Fatalf("defaults = %d/%d, err = %v", cfg.RawRetentionDays, cfg.RollupRetentionDays, err)
+	}
+	t.Setenv(envRawDays, "7")
+	t.Setenv(envRollupDays, "90")
+	cfg, err = Load("development")
+	if err != nil || cfg.RawRetentionDays != 7 || cfg.RollupRetentionDays != 90 {
+		t.Fatalf("overrides = %d/%d, err = %v", cfg.RawRetentionDays, cfg.RollupRetentionDays, err)
+	}
+}
+
+func TestLoadRejectsInvalidRetention(t *testing.T) {
+	for _, key := range []string{envRawDays, envRollupDays} {
+		for _, bad := range []string{"0", "-3", "abc", "1.5"} {
+			clearEnv(t)
+			t.Setenv(key, bad)
+			if _, err := Load("development"); err == nil || !strings.Contains(err.Error(), key) {
+				t.Fatalf("%s=%q: err = %v, want error naming the variable", key, bad, err)
+			}
+		}
 	}
 }

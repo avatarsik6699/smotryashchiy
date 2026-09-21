@@ -32,6 +32,22 @@ func (s *Service) Metrics(ctx context.Context, q MetricQuery) ([]domain.MetricPo
 	return s.repo.Metrics(ctx, q)
 }
 
+// MetricRollups returns hourly aggregates. latest is raw-only and rejected here.
+func (s *Service) MetricRollups(ctx context.Context, q MetricQuery) ([]domain.RollupPoint, error) {
+	if q.Latest {
+		return nil, apierror.Invalid("latest is only available with resolution=raw")
+	}
+	if q.From != nil && q.To != nil && q.From.After(*q.To) {
+		return nil, apierror.Invalid("from must not be after to")
+	}
+	limit, err := boundedLimit(q.Limit, DefaultMetricLimit, MaxMetricLimit)
+	if err != nil {
+		return nil, err
+	}
+	q.Limit = limit
+	return s.repo.MetricRollups(ctx, q)
+}
+
 // Checks returns the newest Check for every (host, name).
 func (s *Service) Checks(ctx context.Context, q CheckQuery) ([]domain.CheckState, error) {
 	return s.repo.Checks(ctx, q)

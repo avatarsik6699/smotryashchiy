@@ -7,8 +7,8 @@
 
 | Field | Value |
 |-------|-------|
-| Document Version | `v1.1` |
-| Date | `2026-09-19` |
+| Document Version | `v1.2` |
+| Date | `2026-09-21` |
 | Architect / Owner | `avatarsik666@gmail.com` |
 | Stack | See [docs/STACK.md](./STACK.md) |
 | Domain | Self-contained self-hosted monitoring for solo developers and small teams |
@@ -92,7 +92,7 @@ once and never re-alerted. Additive-only versioning after v1.
 - **Auth.** Single admin password (bcrypt), HttpOnly/SameSite=Lax session cookie, failed-login
   rate limit, hash initialized only via the stdin-only `admin` command.
 
-## 4. Telemetry contract and storage (Change 02)
+## 4. Telemetry contract and storage (Changes 02–03)
 
 ### 4.1 Wire batch (schema_version `1.0`, additive-only afterwards)
 
@@ -129,8 +129,37 @@ batch advances `hosts.last_seen_at` to the receipt time; producer `ts` never doe
 | GET | `/api/checks?host=&name=` | newest Check per (host, name) |
 | GET | `/api/events?host=&level=&limit=` | newest first, `limit` default 100, max 500 |
 
-Later stages add the HTTP ingest endpoint (Stage 2, over the tunnel), rollups/retention and the
-WebSocket stream (Change 03). The codebase becomes the source of truth once each is built.
+`GET /api/metrics` gains `resolution=raw|hour` (default `raw`). `hour` reads rollups (§4.4), returns
+`{"rollups":[{host, name, labels, ts, count, min, max, avg}]}`, one per point (`ts` = hour start, UTC), and is the only resolution that
+reaches past the raw TTL; `latest=true` is raw-only.
+
+### 4.4 Rollups (Change 03)
+
+Table `metric_rollups_hourly (host_id, name, labels_json, hour_ts, count, min, max, sum)`, primary
+key = (host, name, canonical labels, hour_ts). Only metrics are rolled up; checks and events are not.
+A rollup job aggregates every *closed* hour from raw rows, idempotently (recomputing an hour
+overwrites it), on start-up (catching up from the last rolled-up hour) and then hourly. Late data for
+an already-rolled hour is picked up by re-aggregating the hours touched in the last 24 h on each run.
+Zero is a value: a stored `0` contributes to `count`, `min`, `max` and `sum`.
+
+### 4.5 Retention (Change 03)
+
+Raw metrics, checks and events: 30 days. Hourly rollups: 13 months. Enforced by a purge job run at
+start-up and daily, deleting in bounded batches so the single SQLite writer is never blocked for long.
+A raw row is deleted only after its hour has been rolled up. `ingestion_batches` are purged with the
+raw TTL. TTLs are configurable (`SMOTRYASHCHIY_RAW_RETENTION_DAYS`,
+`SMOTRYASHCHIY_ROLLUP_RETENTION_DAYS`); non-positive or unparsable values fail start-up.
+
+### 4.6 Live stream (Change 03)
+
+`GET /api/stream` upgrades to WebSocket; requires the session cookie and a same-origin `Origin`
+header (otherwise `401`/`403`, no upgrade). Server-to-client only, JSON text frames:
+`{"type":"metric|check|event","host_id":"…","record":{…}}` carrying only records **newly accepted**
+by ingest (duplicates and replays are never published). Optional query filters `host` and `type`.
+Delivery is best-effort and non-blocking: a slow client with a full buffer (64 messages) is
+disconnected, never allowed to stall ingest; clients recover state via the read API on reconnect.
+The server sends ping every 30 s and drops unresponsive connections. Ingest stays HTTP-only and lands
+in Stage 2; Change 03 publishes from the ingest service so that stage needs no stream work.
 
 ## 4a. Other interfaces
 

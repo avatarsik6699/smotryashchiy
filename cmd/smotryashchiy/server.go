@@ -56,7 +56,12 @@ func runServer(stdout io.Writer) error {
 		SecureCookies:     cfg.SecureCookies,
 		TrustedProxyCIDRs: cfg.TrustedProxyCIDRs,
 	}).Register(srv.Mux)
-	telemetryhttp.NewHandlers(telemetryapp.NewService(telemetryinfra.NewStore(sqlDB))).Register(srv.Mux)
+	store := telemetryinfra.NewStore(sqlDB)
+	hub := telemetryapp.NewHub()
+	telemetryhttp.NewHandlers(telemetryapp.NewService(store).WithPublisher(hub)).Register(srv.Mux)
+	telemetryhttp.NewStreamHandlers(hub).Register(srv.Mux)
+	maintenance := telemetryapp.NewMaintenance(store, cfg.RawRetentionDays, cfg.RollupRetentionDays, time.Now)
+	go maintenance.Run(ctx)
 	srv.Use(authhttp.RequireSession(auth))
 
 	serveErr := make(chan error, 1)
@@ -68,6 +73,7 @@ func runServer(stdout io.Writer) error {
 		return err
 	case <-ctx.Done():
 	}
+	hub.Close() // hijacked WebSocket connections are not tracked by http.Server.Shutdown
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil && !errors.Is(err, context.Canceled) {

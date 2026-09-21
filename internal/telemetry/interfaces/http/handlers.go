@@ -51,8 +51,26 @@ type eventJSON struct {
 	Labels  map[string]string `json:"labels"`
 }
 
+type rollupJSON struct {
+	Host   string            `json:"host"`
+	Name   string            `json:"name"`
+	TS     time.Time         `json:"ts"`
+	Count  int64             `json:"count"`
+	Min    float64           `json:"min"`
+	Max    float64           `json:"max"`
+	Avg    float64           `json:"avg"`
+	Labels map[string]string `json:"labels"`
+}
+
 func (h *Handlers) metrics(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
+	resolution := q.Get("resolution")
+	switch resolution {
+	case "", application.ResolutionRaw, application.ResolutionHour:
+	default:
+		apierror.Write(w, apierror.Invalid("resolution must be raw or hour"))
+		return
+	}
 	query := application.MetricQuery{HostID: q.Get("host"), Name: q.Get("name")}
 	var err error
 	if query.From, err = parseTime(q, "from"); err != nil {
@@ -69,6 +87,19 @@ func (h *Handlers) metrics(w http.ResponseWriter, r *http.Request) {
 	}
 	if query.Latest, err = parseBool(q, "latest"); err != nil {
 		apierror.Write(w, err)
+		return
+	}
+	if resolution == application.ResolutionHour {
+		rollups, err := h.service.MetricRollups(r.Context(), query)
+		if err != nil {
+			apierror.Write(w, err)
+			return
+		}
+		items := make([]rollupJSON, 0, len(rollups))
+		for _, p := range rollups {
+			items = append(items, rollupJSON{Host: p.HostID, Name: p.Name, TS: p.TS, Count: p.Count, Min: p.Min, Max: p.Max, Avg: p.Avg, Labels: p.Labels})
+		}
+		writeJSON(w, map[string]any{"rollups": items})
 		return
 	}
 	points, err := h.service.Metrics(r.Context(), query)

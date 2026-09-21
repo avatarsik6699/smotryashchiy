@@ -11,6 +11,8 @@ const (
 	TypeMetric = "metric"
 	TypeCheck  = "check"
 	TypeEvent  = "event"
+	// TypeUptime carries an uptime probe result (docs/SPEC.md §4e); it belongs to a target, not a host.
+	TypeUptime = "uptime"
 )
 
 // SubscriberBuffer is the per-client queue length; a client that lets it fill is disconnected.
@@ -23,6 +25,9 @@ type Message struct {
 	Metric *domain.Metric
 	Check  *domain.Check
 	Event  *domain.Event
+	// TargetID and Payload are set for TypeUptime; Payload is already JSON-ready.
+	TargetID string
+	Payload  any
 }
 
 // Publisher receives the records an ingest call accepted.

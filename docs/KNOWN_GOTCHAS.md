@@ -148,6 +148,26 @@ Carry these into the first contract tests instead of rediscovering them in produ
 - **Symptoms**: a keyboard test expecting ArrowDown to move between rows fails.
 - **Fix**: the `loopFocus`/`orientation` props are deprecated no-ops; navigate with Tab, toggle with Enter/Space.
 
+### A probe error must say what happened, and "no answer" must not become "0 ms"
+
+- **Symptoms**: a DOWN target shown with a latency of 0, or an error text like `Get "http://...": dial tcp ...`.
+- **Rules kept by the code and tests**: latency is `null` unless the target answered (an HTTP 500 did answer, so it
+  keeps its real latency); the `*url.Error` wrapper is stripped; a timeout reads `timeout after 10s`; certificates are
+  always verified (an untrusted or expired one is a failed check with the x509 message).
+
+### Closed loopback ports in this WSL setup may time out instead of refusing
+
+- **Symptoms**: a TCP probe of `127.0.0.1:<never-used port>` reports `timeout after 10s`, while a port whose
+  listener was just stopped reports `connection refused` at once.
+- **Fix**: none needed (both are correct DOWN results); do not write tests or scripts that expect an instant
+  refusal for an arbitrary unused port. Unit tests close a listener they opened to get a refused connection.
+
+### The canvas is briefly wider than its container after a window shrink
+
+- **Symptoms**: for ~2 frames after the viewport shrinks, `uplot` elements measure wider than the chart box.
+- **Why it is fine**: the box has `overflow: hidden`, so nothing is visible outside it; the ResizeObserver callback
+  calls `setSize` synchronously to keep the window this short. Layout checks must sample ≥ 200 ms after a resize.
+
 ### Docker-owned files break host operations (`EACCES` / `EPERM` / read-only)
 
 - **Symptoms**: file operations fail with `EACCES`, `EPERM`, "Permission denied" or

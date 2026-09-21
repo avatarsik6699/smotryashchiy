@@ -83,6 +83,14 @@ describe('Chart', () => {
     expect(instances[0]!.setSize).toHaveBeenLastCalledWith({ width: 120, height: 160 })
   })
 
+  it('resizes the canvas synchronously inside the observer callback, before React re-renders', () => {
+    render(<Chart series={[{ label: 'CPU', points: pts(3) }]} variant="full" height={160} kind="percent" format={fmt} name="CPU" />)
+    resize(300)
+    instances[0]!.setSize.mockClear()
+    act(() => resizeCallbacks.forEach((cb) => cb([{ contentRect: { width: 90 } }])))
+    expect(instances[0]!.setSize).toHaveBeenCalledWith({ width: 90, height: 160 })
+  })
+
   it('destroys the chart on unmount', () => {
     const { unmount } = render(<Chart series={[{ label: 'CPU', points: pts(3) }]} variant="spark" height={32} kind="percent" format={fmt} name="CPU" />)
     resize(200)

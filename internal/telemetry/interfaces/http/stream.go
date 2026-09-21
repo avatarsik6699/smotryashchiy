@@ -34,18 +34,19 @@ func (h *StreamHandlers) Register(mux *http.ServeMux) { mux.HandleFunc("GET /api
 
 // streamFrame is the server-to-client JSON frame: {"type","host_id","record"}.
 type streamFrame struct {
-	Type   string `json:"type"`
-	HostID string `json:"host_id"`
-	Record any    `json:"record"`
+	Type     string `json:"type"`
+	HostID   string `json:"host_id,omitempty"`
+	TargetID string `json:"target_id,omitempty"`
+	Record   any    `json:"record"`
 }
 
 func (h *StreamHandlers) stream(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	typ := q.Get("type")
 	switch typ {
-	case "", application.TypeMetric, application.TypeCheck, application.TypeEvent:
+	case "", application.TypeMetric, application.TypeCheck, application.TypeEvent, application.TypeUptime:
 	default:
-		apierror.Write(w, apierror.Invalid("type must be metric, check or event"))
+		apierror.Write(w, apierror.Invalid("type must be metric, check, event or uptime"))
 		return
 	}
 	// Default AcceptOptions enforce that a present Origin header matches the request host.
@@ -93,6 +94,8 @@ func (h *StreamHandlers) stream(w http.ResponseWriter, r *http.Request) {
 func writeFrame(ctx context.Context, conn *websocket.Conn, msg application.Message) error {
 	frame := streamFrame{Type: msg.Type, HostID: msg.HostID}
 	switch {
+	case msg.Type == application.TypeUptime:
+		frame.TargetID, frame.Record = msg.TargetID, msg.Payload
 	case msg.Metric != nil:
 		m := msg.Metric
 		frame.Record = metricJSON{Host: msg.HostID, Name: m.Name, TS: m.TS, Value: m.Value, Labels: m.Labels}

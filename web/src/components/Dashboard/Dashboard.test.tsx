@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { axe } from 'vitest-axe'
 import { DashboardStore } from '../../data/store'
-import type { EventDTO, HostDTO, MetricDTO } from '../../domain/types'
+import type { EventDTO, HostDTO, MetricDTO, UptimeTargetDTO } from '../../domain/types'
 import { Dashboard } from './Dashboard'
 
 const NOW = Date.now()
@@ -19,6 +19,7 @@ interface Fixture {
   latest: MetricDTO[]
   events: EventDTO[]
   checks?: { host: string; name: string; ts: string; status: 'ok' | 'warn' | 'critical'; meta: unknown }[]
+  targets?: UptimeTargetDTO[]
 }
 
 const FULL: Fixture = {
@@ -51,6 +52,7 @@ function serve(fx: Fixture, overrides: Record<string, () => Response> = {}) {
     if (url.startsWith('/api/metrics')) return json({ metrics: url.includes('latest=true') ? fx.latest : url.includes('host=') ? fx.latest.filter((m) => url.includes(`host=${m.host}`) && url.includes(`name=${encodeURIComponent(m.name)}`)) : [] })
     if (url.startsWith('/api/events')) return json({ events: url.includes('host=') ? fx.events.filter((e) => url.includes(`host=${e.host}`)) : fx.events })
     if (url.startsWith('/api/checks')) return json({ checks: fx.checks ?? [] })
+    if (url.startsWith('/api/uptime')) return json({ targets: fx.targets ?? [] })
     throw new Error(`unexpected ${url}`)
   })
 }

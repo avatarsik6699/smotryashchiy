@@ -27,6 +27,12 @@ describe('alignSeries', () => {
     expect(xs).toEqual([0, 60, 120])
   })
 
+  it('turns known-missing instants (failed checks) into breaks of the line', () => {
+    const { xs, ys } = alignSeries([[p(1000, 5), p(3000, 7)]], undefined, [[2000]])
+    expect(xs).toEqual([1, 2, 3])
+    expect(ys[0]).toEqual([5, null, 7])
+  })
+
   it('handles empty input', () => {
     expect(alignSeries([])).toEqual({ xs: [], ys: [] })
     expect(alignSeries([[]])).toEqual({ xs: [], ys: [[]] })

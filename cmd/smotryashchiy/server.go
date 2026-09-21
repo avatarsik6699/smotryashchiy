@@ -20,6 +20,10 @@ import (
 	telemetryinfra "github.com/avatarsik6699/smotryashchiy/internal/telemetry/infrastructure"
 	telemetryhttp "github.com/avatarsik6699/smotryashchiy/internal/telemetry/interfaces/http"
 	"github.com/avatarsik6699/smotryashchiy/internal/transport"
+	uptimeapp "github.com/avatarsik6699/smotryashchiy/internal/uptime/application"
+	uptimedomain "github.com/avatarsik6699/smotryashchiy/internal/uptime/domain"
+	uptimeinfra "github.com/avatarsik6699/smotryashchiy/internal/uptime/infrastructure"
+	uptimehttp "github.com/avatarsik6699/smotryashchiy/internal/uptime/interfaces/http"
 	"github.com/avatarsik6699/smotryashchiy/web"
 )
 
@@ -80,6 +84,10 @@ func runServer(stdout io.Writer) error {
 			slog.Error("tunnel ingest listener stopped", "err", err)
 		}
 	}()
+	uptimeSvc := uptimeapp.NewService(uptimeinfra.NewStore(sqlDB), uptimeapp.NewChecker(), hubResultPublisher{hub}, time.Now,
+		uptimeapp.Options{Retention: time.Duration(cfg.RawRetentionDays) * 24 * time.Hour})
+	uptimehttp.NewHandlers(uptimeSvc).Register(srv.Mux)
+	go uptimeSvc.Run(ctx)
 	maintenance := telemetryapp.NewMaintenance(store, cfg.RawRetentionDays, cfg.RollupRetentionDays, time.Now)
 	go maintenance.Run(ctx)
 	srv.Mux.Handle("/", web.Handler()) // embedded SPA; the auth middleware keeps /api/ gated
@@ -127,4 +135,11 @@ func startTunnel(ctx context.Context, cfg config.Config, store *telemetryinfra.S
 	}
 	slog.Info("tunnel started", "udp_port", tunnel.UDPPort(), "tunnel_ip", serverIP, "peers", restored)
 	return tunnel, enrollment, nil
+}
+
+// hubResultPublisher adapts the live-stream hub to the uptime context's own publisher port.
+type hubResultPublisher struct{ hub *telemetryapp.Hub }
+
+func (p hubResultPublisher) PublishResult(r uptimedomain.Result) {
+	p.hub.Publish([]telemetryapp.Message{{Type: telemetryapp.TypeUptime, TargetID: r.TargetID, Payload: r}})
 }

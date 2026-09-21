@@ -38,6 +38,7 @@ beforeEach(() => {
     if (url.startsWith('/api/metrics')) return json({ metrics: [] })
     if (url.startsWith('/api/events')) return json({ events: [] })
     if (url.startsWith('/api/checks')) return json({ checks: [] })
+    if (url.startsWith('/api/uptime')) return json({ targets: [] })
     throw new Error(`unexpected ${url}`)
   })
 })

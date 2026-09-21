@@ -1,8 +1,9 @@
 import { api } from '../api/client'
-import type { CheckDTO, EventDTO, HostDTO, MetricDTO } from '../domain/types'
+import type { CheckDTO, EventDTO, HostDTO, MetricDTO, UptimeTargetDTO } from '../domain/types'
 import {
   applyFrame,
   buildRecords,
+  buildTargets,
   HISTORY_METRICS,
   initialState,
   MAX_EVENTS,
@@ -69,11 +70,12 @@ export class DashboardStore {
   private async doLoad(): Promise<void> {
     const from = new Date(this.now() - WINDOW_MS).toISOString()
     try {
-      const [hosts, latest, events, checks, ...history] = await Promise.all([
+      const [hosts, latest, events, checks, uptime, ...history] = await Promise.all([
         api<{ hosts: HostDTO[] }>('/api/hosts'),
         api<{ metrics: MetricDTO[] }>(`/api/metrics?latest=true&limit=${METRIC_LIMIT}`),
         api<{ events: EventDTO[] }>(`/api/events?limit=${MAX_EVENTS}`),
         api<{ checks: CheckDTO[] }>('/api/checks'),
+        api<{ targets: UptimeTargetDTO[] }>('/api/uptime'),
         ...HISTORY_METRICS.map((name) =>
           api<{ metrics: MetricDTO[] }>(`/api/metrics?name=${encodeURIComponent(name)}&from=${encodeURIComponent(from)}&step=${HISTORY_STEP_SECONDS}&limit=${METRIC_LIMIT}`),
         ),
@@ -83,6 +85,7 @@ export class DashboardStore {
         status: 'ready',
         error: null,
         hosts: buildRecords({ hosts: hosts.hosts, latest: latest.metrics, history: history.flatMap((h) => h.metrics), events: events.events, checks: checks.checks }),
+        targets: buildTargets(uptime.targets),
         events: events.events,
       })
     } catch (e) {

@@ -15,9 +15,11 @@ export interface AlignedData {
  * Aligns several series on one x axis, as uPlot requires. Where one series has a gap wider than GAP_MS
  * an extra x with null values is inserted so the line breaks instead of bridging the outage.
  */
-export function alignSeries(series: Point[][], gapMs: number = GAP_MS): AlignedData {
+export function alignSeries(series: Point[][], gapMs: number = GAP_MS, gaps: number[][] = []): AlignedData {
   const times = new Set<number>()
   for (const s of series) for (const p of s) times.add(p.t)
+  // Instants where a series is known to have no value (e.g. a failed check): an x with null breaks the line there.
+  for (const g of gaps) for (const t of g) times.add(t)
   for (const s of series) {
     for (let i = 1; i < s.length; i++) {
       if (s[i]!.t - s[i - 1]!.t > gapMs) times.add(s[i - 1]!.t + 1000)

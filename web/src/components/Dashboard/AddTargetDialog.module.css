@@ -1,0 +1,39 @@
+.kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+}
+
+.kind {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  cursor: pointer;
+}
+
+.radio {
+  display: inline-grid;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid var(--hairline);
+  border-radius: 50%; /* a radio is a circle by convention; the only round control besides the status pulse */
+  background: var(--canvas);
+  place-items: center;
+}
+
+.radio[data-checked] {
+  border-color: var(--accent);
+}
+
+.indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.hint {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}

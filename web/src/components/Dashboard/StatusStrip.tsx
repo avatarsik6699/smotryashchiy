@@ -28,7 +28,13 @@ export function summarizeHosts(entries: HostEntry[]) {
 }
 
 /** One aligned row of fleet counters; unknown averages stay "—" rather than becoming 0. */
-export function StatusStrip({ entries }: { entries: HostEntry[] }) {
+export interface ProbeSummary {
+  up: number
+  down: number
+}
+
+/** Probes with no verdict (NEW, STALE) are counted in neither number: unknown stays unknown. */
+export function StatusStrip({ entries, probes }: { entries: HostEntry[]; probes: ProbeSummary | null }) {
   const s = summarizeHosts(entries)
   const items: [string, string][] = [
     ['hosts', String(s.hosts)],
@@ -38,6 +44,7 @@ export function StatusStrip({ entries }: { entries: HostEntry[] }) {
     [HOST_STATE_LABEL.new.toLowerCase(), String(s.new)],
     ['avg cpu', s.cpu === null ? UNKNOWN : formatPercent(s.cpu)],
     ['avg mem', s.memory === null ? UNKNOWN : formatPercent(s.memory)],
+    ...(probes === null ? [] : ([['probes up', String(probes.up)], ['probes down', String(probes.down)]] as [string, string][])),
   ]
   return (
     <section className={shared.section} aria-labelledby="status-title">

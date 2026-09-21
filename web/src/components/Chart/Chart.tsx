@@ -9,6 +9,8 @@ import styles from './Chart.module.css'
 export interface ChartSeries {
   label: string
   points: Point[]
+  /** Timestamps (ms) where the series has no value, drawn as breaks in the line. */
+  gaps?: number[]
 }
 
 export interface ChartProps {
@@ -39,13 +41,15 @@ export function Chart({ series, variant, height, kind, format, name, decorative 
   const widthRef = useRef(0)
   const themeKey = useColorSchemeKey()
 
-  const aligned = useMemo(() => alignSeries(series.map((s) => s.points)), [series])
+  const aligned = useMemo(() => alignSeries(series.map((s) => s.points), undefined, series.map((s) => s.gaps ?? [])), [series])
   const enough = sampleCount(series.map((s) => s.points)) >= 2
   const max = useMemo(() => Math.max(0, ...series.flatMap((s) => s.points.map((p) => p.v))), [series])
   const rangeRef = useRef<[number, number]>([0, 1])
   rangeRef.current = yRange(kind, max)
   const dataRef = useRef<uPlot.AlignedData>([[], []])
   dataRef.current = [aligned.xs, ...aligned.ys] as uPlot.AlignedData
+  const heightRef = useRef(height)
+  heightRef.current = height
   const formatRef = useRef(format)
   formatRef.current = format
   const labelsSig = series.map((s) => s.label).join('\u0000')
@@ -58,6 +62,9 @@ export function Chart({ series, variant, height, kind, format, name, decorative 
     const observer = new ResizeObserver((entries) => {
       const w = Math.floor(entries[0]?.contentRect.width ?? 0)
       widthRef.current = w
+      // Resize the canvas right here, in the same frame as the container: waiting for a React render
+      // would leave it wider than its container for a few frames while the window shrinks.
+      if (w > 0) plotInstance.current?.setSize({ width: w, height: heightRef.current })
       setWidth(w)
     })
     observer.observe(box)

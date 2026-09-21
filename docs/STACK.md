@@ -99,6 +99,7 @@ internal/agent/      # agent: enroll, persistent tunnel session, sender (retry/b
 internal/agent/collect/  # /proc + statfs collectors (cpu, memory/swap, disk, network, load, uptime)
 internal/agent/spool/    # durable bounded FIFO of unsent batches (offline buffer)
 web/                 # single-page UI (Vite app) + embed.go (go:embed all:dist, static handler, CSP)
+internal/uptime/     # uptime prober: targets (http/tcp/tls), checker, scheduler, results, API (own context, own tables)
 internal/telemetry/  # Metric/Check/Event contract, ingest service, SQLite store, read API,
                      # hourly rollups + retention jobs (Maintenance), live stream hub + WebSocket
                      # bounded contexts talk through ports (application interfaces), not internals

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { CheckDTO, EventDTO, HostDTO, MetricDTO } from '../domain/types'
-import { applyFrame, buildRecords, currentValue, hostView, initialState, MAX_EVENTS, networkPoints, seriesKey, type DashboardState } from './model'
+import type { CheckDTO, EventDTO, HostDTO, MetricDTO, UptimeResultDTO, UptimeTargetDTO } from '../domain/types'
+import { applyFrame, buildRecords, buildTargets, currentValue, hostView, initialState, MAX_EVENTS, networkPoints, seriesKey, type DashboardState } from './model'
 
 const NOW = Date.UTC(2026, 8, 21, 12, 0, 0)
 const iso = (offsetSeconds: number) => new Date(NOW + offsetSeconds * 1000).toISOString()
@@ -144,5 +144,47 @@ describe('selectors', () => {
     expect(view.uptimeSeconds).toBe(3600)
     expect(view.cpu.value).toBeNull()
     expect(view.network.rate).toBeNull()
+  })
+})
+
+describe('uptime targets', () => {
+  const result = (offset: number, ok: boolean, latency: number | null): UptimeResultDTO => ({ target_id: 't1', ts: iso(offset), ok, latency_ms: latency, status_code: ok ? 200 : null, error: ok ? '' : 'connection refused', cert_expires_at: null })
+  const dto = (over: Partial<UptimeTargetDTO> = {}): UptimeTargetDTO => ({
+    id: 't1', name: 'site', kind: 'http', target: 'https://example.com', interval_seconds: 60, created_at: iso(-9999),
+    last: result(-10, true, 120), latency: [[NOW - 20_000, 100], [NOW - 10_000, null]], ...over,
+  })
+  const withTargets = (list: UptimeTargetDTO[]): DashboardState => ({ ...initialState, status: 'ready', targets: buildTargets(list) })
+
+  it('maps the API shape, keeping null latency as null (not 0)', () => {
+    const [rec] = buildTargets([dto()])
+    expect(rec!.latency).toEqual([{ t: NOW - 20_000, v: 100 }, { t: NOW - 10_000, v: null }])
+    expect(rec!.target.name).toBe('site')
+  })
+
+  it('applies a live result: newest becomes last and a failed check adds a null point', () => {
+    const start = withTargets([dto()])
+    const { state } = applyFrame(start, { type: 'uptime', target_id: 't1', record: result(0, false, null) }, NOW)
+    expect(state.targets[0]!.last).toMatchObject({ ok: false, error: 'connection refused' })
+    expect(state.targets[0]!.latency.at(-1)).toEqual({ t: NOW, v: null })
+    expect(start.targets[0]!.latency).toHaveLength(2) // the old snapshot is untouched
+  })
+
+  it('ignores a replayed or older result', () => {
+    const start = withTargets([dto()])
+    expect(applyFrame(start, { type: 'uptime', target_id: 't1', record: result(-10, false, null) }, NOW).state).toBe(start)
+    expect(applyFrame(start, { type: 'uptime', target_id: 't1', record: result(-50, false, null) }, NOW).state).toBe(start)
+  })
+
+  it('reports a result of an unknown target so the caller reloads', () => {
+    const start = withTargets([dto()])
+    const out = applyFrame(start, { type: 'uptime', target_id: 'other', record: { ...result(0, true, 5), target_id: 'other' } }, NOW)
+    expect(out.unknownHost).toBe(true)
+    expect(out.state).toBe(start)
+  })
+
+  it('drops history older than the one-hour window', () => {
+    const start = withTargets([dto({ latency: [[NOW - 4000_000, 1], [NOW - 10_000, 2]] })])
+    const { state } = applyFrame(start, { type: 'uptime', target_id: 't1', record: result(0, true, 3) }, NOW)
+    expect(state.targets[0]!.latency.map((p) => p.v)).toEqual([2, 3])
   })
 })

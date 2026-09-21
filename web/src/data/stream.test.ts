@@ -51,6 +51,10 @@ describe('parseFrame', () => {
       expect(parseFrame(bad)).toBeNull()
     }
     expect(parseFrame(new ArrayBuffer(1))).toBeNull()
+    const uptime = { type: 'uptime', target_id: 't1', record: { ok: true } }
+    expect(parseFrame(JSON.stringify(uptime))).toEqual(uptime)
+    expect(parseFrame(JSON.stringify({ type: 'uptime', record: {} }))).toBeNull() // needs a target_id, not a host_id
+    expect(parseFrame(JSON.stringify({ type: 'uptime', host_id: 'h', record: {} }))).toBeNull()
   })
 })
 

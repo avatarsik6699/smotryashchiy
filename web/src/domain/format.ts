@@ -71,3 +71,9 @@ export function formatAxisTime(ms: number): string {
 export function formatAxisTimeSeconds(ms: number): string {
   return `${formatAxisTime(ms)}:${pad2(new Date(ms).getSeconds())}`
 }
+
+/** "142 ms" or "1.3 s". */
+export function formatLatency(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return UNKNOWN
+  return ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)} s`
+}

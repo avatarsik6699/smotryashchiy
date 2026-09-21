@@ -7,7 +7,7 @@
 
 | Field | Value |
 |-------|-------|
-| Document Version | `v1.6` |
+| Document Version | `v1.7` |
 | Date | `2026-09-21` |
 | Architect / Owner | `avatarsik666@gmail.com` |
 | Stack | See [docs/STACK.md](./STACK.md) |
@@ -55,7 +55,8 @@ Entities (carried over from the predecessor's proven contract):
 `Project → Host | Check target → (Metric | Check | Event) → Alert`
 
 - **Host** — a machine running an agent (identity, enrollment, last-seen).
-- **Uptime target** — a URL/endpoint probed by the server itself.
+- **Uptime target** — a URL/endpoint probed by the server itself (§4e); its results are their own
+  records, not host telemetry.
 - **Metric** — `{name, ts, value, labels}` time series. **Check** — `{name, ts, status: ok|warn|critical, meta}`.
   **Event** — `{ts, level, message, labels}`. **Alert** — derived by the router from rules.
 
@@ -155,7 +156,8 @@ raw TTL. TTLs are configurable (`SMOTRYASHCHIY_RAW_RETENTION_DAYS`,
 `GET /api/stream` upgrades to WebSocket; requires the session cookie and a same-origin `Origin`
 header (otherwise `401`/`403`, no upgrade). Server-to-client only, JSON text frames:
 `{"type":"metric|check|event","host_id":"…","record":{…}}` carrying only records **newly accepted**
-by ingest (duplicates and replays are never published). Optional query filters `host` and `type`.
+by ingest (duplicates and replays are never published). Uptime results (§4e) travel as
+`{"type":"uptime","target_id":"…","record":{…}}` (additive; a subscription filtered by `host` does not receive them). Optional query filters `host` and `type`.
 Delivery is best-effort and non-blocking: a slow client with a full buffer (64 messages) is
 disconnected, never allowed to stall ingest; clients recover state via the read API on reconnect.
 The server sends ping every 30 s and drops unresponsive connections. Ingest stays HTTP-only and lands
@@ -259,6 +261,33 @@ All routes below except static assets require the session cookie.
   tests (with component-level axe checks) and the production build (before `go build`), plus a bundle
   budget of 200 KB gzip for JavaScript.
 
+## 4e. Uptime prober (Change 08)
+
+The server probes operator-defined **targets** itself; nothing runs on the monitored side.
+
+- **Kinds.** `http` (absolute `http(s)` URL, no credentials, ≤ 2048 bytes): a `GET` following up to 5
+  redirects, success = final status 200–399; the body is never read. `tcp` (`host:port`): the connection
+  opens. `tls` (`host:port`): the TLS handshake completes with full certificate verification. `http`
+  targets with an `https` URL and all `tls` targets also record the leaf certificate's `NotAfter`.
+- **Definition.** `name` 1–80 bytes, unique; `interval_seconds` 30–3600 (default 60); per-check timeout
+  10 s. At most 50 targets. Certificates are verified (self-signed or expired = a failed check with the
+  verification error); probing internal addresses is allowed because only the authenticated operator defines
+  targets.
+- **Results** (`uptime_results`: target, `ts`, `ok`, `latency_ms`, `status_code`, `error`, `cert_expires_at`)
+  are kept for the raw TTL (§4.5), purged independently of rollups. `latency_ms` is time to response headers
+  (http) or to connect/handshake (tcp/tls) and is recorded whenever the target answered (also with a bad
+  HTTP status); when it did not answer there is no latency, not a zero one. A result is one
+  observation: no retries and no smoothing.
+- **Scheduling.** One schedule per target, first run jittered within the first 10 s, at most 8 checks in
+  flight, stopped cleanly on shutdown. Creating or deleting a target takes effect immediately.
+- **State** (derived like host state, never stored): `UP` last result ok; `DOWN` last result failed (with its
+  error text); `STALE` last result older than max(3 × interval, 90 s); `NEW` no result yet. A certificate with
+  ≤ 14 days left is shown as text (`TLS 9d`), not as a state; alerting stays deferred.
+- **API** (session required): `GET /api/uptime` → `{"targets":[{id,name,kind,target,interval_seconds,
+  created_at,last,latency}]}` where `last` is the newest result or `null` and `latency` is
+  `[[ts_ms, latency_ms|null], …]` for the last hour; `POST /api/uptime` → `201` target (`400` invalid,
+  `409` duplicate name or limit reached); `DELETE /api/uptime/{id}` → `204`, results are deleted with it.
+
 ## 4a. Other interfaces
 
 `/healthz` and `/health/ready` (exact release) exist since Change 01; UI/admin APIs are specified
@@ -269,10 +298,12 @@ in the change that introduces them.
 **One page, no navigation.** Opening `/` shows a single dashboard; separators are whitespace and
 hairlines, never cards. It is the simplification of the predecessor's Dashboard / Sources /
 Notifications / Source-detail structure (`docs/reference/`), which stays frozen as a design donor.
-Alerts/Notifications is deferred with alerting (§7); the uptime section appears with the prober.
+Alerts/Notifications is deferred with alerting (§7). The UPTIME ledger lists targets (state text, name and
+target, latency with a sparkline, TLS days, age); targets are added through a dialog and removed with an
+inline confirmation, no separate page.
 
 Layout, top to bottom: command bar (`$ smotryashchiy`, live-connection text, `+ add host`, `logout`),
-**STATUS** strip (hosts and freshness counts, average CPU/memory), **HOSTS** ledger, **EVENTS** log.
+**STATUS** strip (hosts and freshness counts, average CPU/memory), **HOSTS** ledger, **UPTIME** ledger (targets), **EVENTS** log.
 A host row shows name, freshness state, four sparklines with current values (CPU, memory, disk, network)
 and last-seen age; activating it expands the row in place (one open at a time) to large charts, disks per
 mount, network per interface, load, swap, checks and that host's events. The window is fixed at 1 hour;

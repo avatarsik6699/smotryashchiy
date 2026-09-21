@@ -3,12 +3,15 @@ import { useMemo, useState } from 'react'
 import { DashboardProvider, useDashboard, useStore } from '../../data/DashboardContext'
 import type { DashboardStore } from '../../data/store'
 import { hostView } from '../../data/model'
+import { uptimeState } from '../../domain/uptime'
 import { hostState } from '../../domain/freshness'
 import { useNow } from '../../hooks/useNow'
 import { AddHostDialog } from './AddHostDialog'
+import { AddTargetDialog } from './AddTargetDialog'
 import { CommandBar } from './CommandBar'
 import { EventsSection } from './EventsSection'
 import { HostsSection } from './HostsSection'
+import { UptimeSection } from './UptimeSection'
 import { StatusStrip, type HostEntry } from './StatusStrip'
 import styles from './Dashboard.module.css'
 
@@ -32,8 +35,14 @@ function DashboardView({ onLogout }: { onLogout: () => Promise<void> }) {
   const store = useStore()
   const now = useNow(5000)
   const [adding, setAdding] = useState(false)
+  const [addingTarget, setAddingTarget] = useState(false)
 
   const entries: HostEntry[] = useMemo(() => state.hosts.map((rec) => ({ view: hostView(rec, now), state: hostState(rec.lastSeenMs, now) })), [state.hosts, now])
+  const probes = useMemo(() => {
+    if (state.targets.length === 0) return null
+    const states = state.targets.map((t) => uptimeState(t.last, t.target.interval_seconds, now))
+    return { up: states.filter((s) => s === 'up').length, down: states.filter((s) => s === 'down').length }
+  }, [state.targets, now])
   const hostNames = useMemo(() => new Map(state.hosts.map((h) => [h.host.id, h.host.name])), [state.hosts])
 
   return (
@@ -75,13 +84,15 @@ function DashboardView({ onLogout }: { onLogout: () => Promise<void> }) {
                 <span className={styles.noticeStrong}>Live updates are offline.</span> Showing the last refresh; reconnecting in the background.
               </p>
             )}
-            <StatusStrip entries={entries} />
+            <StatusStrip entries={entries} probes={probes} />
             <HostsSection entries={entries} records={state.hosts} now={now} onAddHost={() => setAdding(true)} />
+            <UptimeSection targets={state.targets} now={now} onAdd={() => setAddingTarget(true)} />
             <EventsSection events={state.events} hostNames={hostNames} />
           </>
         )}
       </main>
       <AddHostDialog open={adding} onOpenChange={setAdding} />
+      <AddTargetDialog open={addingTarget} onOpenChange={setAddingTarget} />
     </div>
   )
 }

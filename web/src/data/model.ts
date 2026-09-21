@@ -1,6 +1,6 @@
 import { isFresh } from '../domain/freshness'
 import { counterRates, groupByLabel, pickDiskMount, sumSeries } from '../domain/series'
-import type { CheckDTO, EventDTO, HostDTO, MetricDTO, Point } from '../domain/types'
+import type { CheckDTO, EventDTO, HostDTO, MetricDTO, Point, UptimeResultDTO, UptimeTargetDTO } from '../domain/types'
 
 /** Metrics that carry an hour of history for sparklines (docs/SPEC.md §5). */
 export const HISTORY_METRICS = [
@@ -31,16 +31,29 @@ export interface HostRecord {
 
 export type ConnectionState = 'connecting' | 'live' | 'reconnecting' | 'offline'
 
+/** A latency sample; v is null for a failed check so the chart can show the gap. */
+export interface LatencyPoint {
+  t: number
+  v: number | null
+}
+
+export interface UptimeRecord {
+  target: Pick<UptimeTargetDTO, 'id' | 'name' | 'kind' | 'target' | 'interval_seconds'>
+  last: UptimeResultDTO | null
+  latency: LatencyPoint[]
+}
+
 export interface DashboardState {
   status: 'loading' | 'ready' | 'error'
   /** Message of the last failed (re)load; with status ready it means the data on screen is not refreshing. */
   error: string | null
   hosts: HostRecord[]
+  targets: UptimeRecord[]
   events: EventDTO[]
   connection: ConnectionState
 }
 
-export const initialState: DashboardState = { status: 'loading', error: null, hosts: [], events: [], connection: 'connecting' }
+export const initialState: DashboardState = { status: 'loading', error: null, hosts: [], targets: [], events: [], connection: 'connecting' }
 
 export function seriesKey(name: string, labels: Record<string, string>): string {
   const parts = Object.keys(labels)
@@ -97,10 +110,16 @@ export function buildRecords(data: LoadedData): HostRecord[] {
   return [...byHost.values()].sort((a, b) => a.host.name.localeCompare(b.host.name) || a.host.id.localeCompare(b.host.id))
 }
 
-export interface StreamFrame {
-  type: 'metric' | 'check' | 'event'
-  host_id: string
-  record: MetricDTO | CheckDTO | EventDTO
+export type StreamFrame =
+  | { type: 'metric' | 'check' | 'event'; host_id: string; record: MetricDTO | CheckDTO | EventDTO }
+  | { type: 'uptime'; target_id: string; record: UptimeResultDTO }
+
+export function buildTargets(list: UptimeTargetDTO[]): UptimeRecord[] {
+  return list.map((t) => ({
+    target: { id: t.id, name: t.name, kind: t.kind, target: t.target, interval_seconds: t.interval_seconds },
+    last: t.last,
+    latency: t.latency.map(([ts, ms]) => ({ t: ts, v: ms })),
+  }))
 }
 
 /**
@@ -108,6 +127,18 @@ export interface StreamFrame {
  * the frame belongs to a host that is not loaded yet (the caller refreshes the host list).
  */
 export function applyFrame(state: DashboardState, frame: StreamFrame, nowMs: number): { state: DashboardState; unknownHost: boolean } {
+  if (frame.type === 'uptime') {
+    const i = state.targets.findIndex((t) => t.target.id === frame.target_id)
+    if (i < 0) return { state, unknownHost: true } // a target added elsewhere: reload to pick it up
+    const rec = state.targets[i]!
+    const r = frame.record
+    const t = Date.parse(r.ts)
+    if (rec.last && t <= Date.parse(rec.last.ts)) return { state, unknownHost: false }
+    const latency = [...rec.latency.filter((p) => p.t >= nowMs - WINDOW_MS), { t, v: r.latency_ms }]
+    const targets = state.targets.slice()
+    targets[i] = { ...rec, last: r, latency }
+    return { state: { ...state, targets }, unknownHost: false }
+  }
   if (frame.type === 'event') {
     const event = frame.record as EventDTO
     return { state: { ...state, events: [event, ...state.events].slice(0, MAX_EVENTS) }, unknownHost: false }

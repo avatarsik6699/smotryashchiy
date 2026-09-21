@@ -33,7 +33,7 @@ export function signalUnauthorized(): void {
 }
 
 interface RequestOptions {
-  method?: 'GET' | 'POST'
+  method?: 'GET' | 'POST' | 'DELETE'
   body?: unknown
   /** A 401 from this call is an answer (wrong password), not an expired session. */
   expectUnauthorized?: boolean

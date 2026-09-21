@@ -27,8 +27,9 @@ export function parseFrame(data: unknown): StreamFrame | null {
   }
   if (!value || typeof value !== 'object') return null
   const f = value as Record<string, unknown>
-  if ((f.type !== 'metric' && f.type !== 'check' && f.type !== 'event') || typeof f.host_id !== 'string') return null
   if (!f.record || typeof f.record !== 'object') return null
+  if (f.type === 'uptime') return typeof f.target_id === 'string' ? (f as unknown as StreamFrame) : null
+  if ((f.type !== 'metric' && f.type !== 'check' && f.type !== 'event') || typeof f.host_id !== 'string') return null
   return f as unknown as StreamFrame
 }
 

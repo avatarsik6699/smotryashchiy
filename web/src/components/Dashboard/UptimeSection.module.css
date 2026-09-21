@@ -1,0 +1,169 @@
+.head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.ledger {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--hairline);
+  list-style: none;
+}
+
+.row {
+  display: grid;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  padding: 14px 0;
+  border-bottom: 1px solid var(--hairline);
+  /* state | identity | latency | tls | age | actions; every track may shrink so a canvas cannot widen the page */
+  grid-template-columns: 96px minmax(0, 1.6fr) minmax(0, 1fr) 84px 92px minmax(0, auto);
+}
+
+.state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+}
+
+.pulse {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--status-unreachable);
+}
+
+.row[data-state='up'] .pulse {
+  background: var(--status-ok);
+}
+
+.row[data-state='down'] .pulse {
+  background: var(--status-critical);
+}
+
+.row[data-state='stale'] .pulse {
+  background: var(--status-warn);
+}
+
+.identity {
+  display: grid;
+  min-width: 0;
+}
+
+.name {
+  overflow: hidden;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.target {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.error {
+  color: var(--status-critical);
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+.latency {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.latencyHead {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-1);
+}
+
+.label {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+}
+
+.value {
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.tls,
+.age {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.tls[data-warn='true'] {
+  color: var(--status-warn);
+}
+
+.age {
+  text-align: right;
+}
+
+.actions {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-1);
+}
+
+.confirm {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+@media (max-width: 900px) {
+  .row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas:
+      'state age'
+      'identity identity'
+      'latency tls'
+      'actions actions';
+  }
+
+  .state {
+    grid-area: state;
+  }
+
+  .age {
+    grid-area: age;
+  }
+
+  .identity {
+    grid-area: identity;
+  }
+
+  .latency {
+    grid-area: latency;
+  }
+
+  .tls {
+    grid-area: tls;
+    text-align: right;
+  }
+
+  .actions {
+    grid-area: actions;
+    justify-content: flex-start;
+  }
+}

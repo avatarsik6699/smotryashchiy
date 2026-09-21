@@ -16,6 +16,7 @@ function routeAll(overrides: Record<string, () => Response> = {}) {
     if (url.startsWith('/api/metrics')) return ok({ metrics: [] })
     if (url.startsWith('/api/events')) return ok({ events: [] })
     if (url.startsWith('/api/checks')) return ok({ checks: [] })
+    if (url.startsWith('/api/uptime')) return ok({ targets: [] })
     throw new Error(`unexpected ${url}`)
   })
 }
@@ -39,6 +40,7 @@ describe('DashboardStore.load', () => {
     expect(urls.some((u) => u.startsWith('/api/metrics?latest=true'))).toBe(true)
     expect(urls.some((u) => u.startsWith('/api/events?limit=50'))).toBe(true)
     expect(urls).toContain('/api/checks')
+    expect(urls).toContain('/api/uptime')
     const history = urls.filter((u) => u.includes('step=60'))
     expect(history).toHaveLength(5)
     for (const name of ['cpu.usage_percent', 'memory.used_percent', 'disk.used_percent', 'network.rx_bytes_total', 'network.tx_bytes_total']) {

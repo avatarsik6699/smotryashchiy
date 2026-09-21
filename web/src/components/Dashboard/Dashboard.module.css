@@ -1,0 +1,82 @@
+.page {
+  min-height: 100vh;
+}
+
+.main {
+  display: grid;
+  max-width: var(--page-max);
+  margin: 0 auto;
+  padding: 28px var(--page-pad) 48px;
+  gap: var(--space-5);
+  grid-template-columns: minmax(0, 1fr); /* a content-sized track lets a canvas widen the page */
+}
+
+.section {
+  min-width: 0;
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--hairline);
+}
+
+.section:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.sectionTitle {
+  margin: 0 0 var(--space-2);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 400;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.notice {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.noticeStrong {
+  color: var(--text);
+}
+
+.button {
+  padding: 6px 9px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: transparent;
+  cursor: pointer;
+  transition: background-color 150ms ease-out;
+}
+
+.button:hover {
+  background: var(--raised);
+}
+
+.buttonPrimary {
+  padding: 8px 12px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: var(--on-accent);
+  cursor: pointer;
+}
+
+.button[data-disabled],
+.buttonPrimary[data-disabled] {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Loading skeleton: quiet bars, no spinner in the middle of content. */
+.skeleton {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.skeletonRow {
+  height: 56px;
+  border-bottom: 1px solid var(--hairline);
+  background: linear-gradient(90deg, var(--raised), transparent);
+  opacity: 0.6;
+}

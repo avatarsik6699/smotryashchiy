@@ -4,6 +4,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { axe } from 'vitest-axe'
 import { App } from './App'
 
+vi.mock('./components/Dashboard/Dashboard', () => ({
+  Dashboard: ({ onLogout }: { onLogout: () => Promise<void> }) => (
+    <div>
+      <p>dashboard shown</p>
+      <button onClick={() => void onLogout()}>logout</button>
+    </div>
+  ),
+}))
+
 const fetchMock = vi.fn<typeof fetch>()
 
 function json(status: number, body?: unknown): Response {
@@ -41,25 +50,9 @@ describe('App session flow', () => {
       'GET /api/hosts': () => json(200, { hosts: [{ id: 'a', name: 'vps1' }, { id: 'b', name: 'vps2' }] }),
     })
     const { container } = render(<App />)
-    expect(await screen.findByText('2 hosts registered')).toBeInTheDocument()
+    expect(await screen.findByText('dashboard shown')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'logout' })).toBeInTheDocument()
     expect(await axe(container)).toHaveNoViolations()
-  })
-
-  it('uses the singular for one host and says so plainly for none', async () => {
-    route({
-      'GET /api/auth/session': () => json(200, { authenticated: true }),
-      'GET /api/hosts': () => json(200, { hosts: [{ id: 'a', name: 'vps1' }] }),
-    })
-    const first = render(<App />)
-    expect(await screen.findByText('1 host registered')).toBeInTheDocument()
-    first.unmount()
-    route({
-      'GET /api/auth/session': () => json(200, { authenticated: true }),
-      'GET /api/hosts': () => json(200, { hosts: [] }),
-    })
-    render(<App />)
-    expect(await screen.findByText('0 hosts registered')).toBeInTheDocument()
   })
 
   it('logs in, then logs out back to the form', async () => {
@@ -80,26 +73,20 @@ describe('App session flow', () => {
     render(<App />)
     await user.type(await screen.findByLabelText('Password'), 'pw')
     await user.click(screen.getByRole('button', { name: 'Sign in' }))
-    expect(await screen.findByText('0 hosts registered')).toBeInTheDocument()
+    expect(await screen.findByText('dashboard shown')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'logout' }))
     expect(await screen.findByLabelText('Password')).toBeInTheDocument()
   })
 
-  it('returns to the login form when the session expires mid-use', async () => {
-    let calls = 0
+  it('returns to the login form when any call reports an expired session', async () => {
     route({
       'GET /api/auth/session': () => json(200, { authenticated: true }),
-      'GET /api/hosts': () => {
-        calls += 1
-        // 1: the shell's own load; the session then expires.
-        return calls <= 1 ? json(200, { hosts: [] }) : json(401, { error: 'invalid or expired session' })
-      },
+      'GET /api/hosts': () => json(401, { error: 'invalid or expired session' }),
     })
     render(<App />)
-    await screen.findByText('0 hosts registered')
-    // The shell's own request is refused (session expired): the client signals it and the app shows the form.
+    await screen.findByText('dashboard shown')
     const { api } = await import('./api/client')
-    await api('/api/hosts').catch(() => undefined)
+    await api('/api/hosts').catch(() => undefined) // the client signals the expiry to the session hook
     expect(await screen.findByLabelText('Password')).toBeInTheDocument()
   })
 

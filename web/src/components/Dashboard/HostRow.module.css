@@ -1,0 +1,152 @@
+.item {
+  border-bottom: 1px solid var(--hairline);
+}
+
+.header {
+  margin: 0;
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+.trigger {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding: 14px 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 150ms ease-out;
+  /* state | identity | cpu mem disk net | age. Every track may shrink: minmax(0, ...) keeps canvases in bounds. */
+  grid-template-columns: 104px minmax(0, 1.3fr) repeat(4, minmax(0, 1fr)) 92px;
+}
+
+.trigger:hover {
+  background: var(--raised);
+}
+
+.state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+}
+
+.chevron {
+  flex: none;
+  color: var(--text-muted);
+  transition: transform 150ms ease-out;
+}
+
+.trigger[data-panel-open] .chevron {
+  transform: rotate(90deg);
+}
+
+.pulse {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--status-unreachable);
+}
+
+.item[data-state='ok'] .pulse {
+  background: var(--status-ok);
+}
+
+.item[data-state='stale'] .pulse {
+  background: var(--status-warn);
+}
+
+.item[data-state='offline'] .pulse {
+  background: var(--status-critical);
+}
+
+.item[data-state='offline'] .name,
+.item[data-state='new'] .name {
+  color: var(--text-muted);
+}
+
+.identity {
+  display: grid;
+  min-width: 0;
+}
+
+.name {
+  overflow: hidden;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meta {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.metric {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.metricHead {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-1);
+}
+
+.metricLabel {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.metricValue {
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.age {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  text-align: right;
+}
+
+.panel {
+  overflow: hidden;
+  padding: 0 0 var(--space-4);
+}
+
+/* Evidence Line: identity, measurements and freshness stack in that order when the width runs out. */
+@media (max-width: 900px) {
+  .trigger {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas:
+      'state age'
+      'identity identity';
+  }
+
+  .state {
+    grid-area: state;
+  }
+
+  .identity {
+    grid-area: identity;
+  }
+
+  .age {
+    grid-area: age;
+  }
+}

@@ -1,0 +1,98 @@
+.figure,
+.spark {
+  min-width: 0; /* a grid/flex child may shrink below its content, or the canvas pushes the page wide */
+  margin: 0;
+}
+
+.box {
+  position: relative;
+  min-width: 0;
+  overflow: hidden; /* nothing the canvas, an axis label or the tooltip does can leave this box */
+}
+
+.plot {
+  min-width: 0;
+}
+
+/* uPlot sizes its own root from the options; keep it from ever exceeding the box. */
+.plot :global(.uplot) {
+  max-width: 100%;
+}
+
+.empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  place-items: center;
+}
+
+.tip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  max-width: 100%;
+  padding: 4px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--raised);
+  color: var(--text);
+  font-size: 0.75rem;
+  line-height: 1.35;
+  white-space: pre;
+  pointer-events: none;
+}
+
+.tip[hidden] {
+  display: none;
+}
+
+.caption {
+  margin-top: var(--space-1);
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.legendItem {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-1);
+  font-size: 0.75rem;
+}
+
+.swatch {
+  display: inline-block;
+  width: 18px;
+  height: 0;
+  border-top: 2px solid var(--accent);
+  align-self: center;
+}
+
+.swatch[data-style='1'] {
+  border-top: 2px dashed var(--text);
+}
+
+.swatch[data-style='2'] {
+  border-top: 2px dotted var(--text-muted);
+}
+
+.legendLabel {
+  color: var(--text);
+}
+
+.legendValues {
+  min-width: 0;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}

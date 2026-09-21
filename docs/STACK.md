@@ -116,5 +116,9 @@ docs/                # SPEC, STACK, playbooks, changes/, reference/ (predecessor
   the proxy keeps the Host header so the WebSocket same-origin check passes). Production: `npm run build`
   then `go build`; `web/dist/.gitkeep` is the only tracked file there, and an unbuilt binary serves a
   placeholder page.
+- Charts: only through `components/Chart/Chart.tsx` (uPlot). New chart types must keep the layout contract of
+  SPEC §5 and are checked in a real browser at 360/768/1280/1920 px (structure: every descendant inside the
+  chart box, no horizontal page scroll; visual: axis labels and tooltip not clipped).
+- Layout: grids that contain charts use `minmax(0, 1fr)` tracks; rows stack at 900 px, events at 720 px.
 - Tests: Vitest with jsdom (no canvas: uPlot is mocked in unit tests; real chart behavior is checked in the
   browser with Playwriter). Every screen gets an axe check.

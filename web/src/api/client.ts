@@ -27,6 +27,11 @@ export function onUnauthorized(listener: () => void): () => void {
   return () => unauthorizedTarget.removeEventListener(UNAUTHORIZED, listener)
 }
 
+/** Announces that the session is gone (an authenticated call was refused, or a probe found no session). */
+export function signalUnauthorized(): void {
+  unauthorizedTarget.dispatchEvent(new Event(UNAUTHORIZED))
+}
+
 interface RequestOptions {
   method?: 'GET' | 'POST'
   body?: unknown
@@ -74,7 +79,7 @@ export async function api<T = void>(path: string, options: RequestOptions = {}):
   }
   const message = await errorMessage(res)
   if (res.status === 401) {
-    if (!expectUnauthorized) unauthorizedTarget.dispatchEvent(new Event(UNAUTHORIZED))
+    if (!expectUnauthorized) signalUnauthorized()
     throw new ApiError('unauthorized', 401, message)
   }
   if (res.status === 429) {

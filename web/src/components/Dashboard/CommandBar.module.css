@@ -1,0 +1,55 @@
+.bar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-2) var(--page-pad);
+  border-bottom: 1px solid var(--hairline);
+  background: var(--canvas);
+}
+
+.brand {
+  font-weight: 650;
+}
+
+.prompt {
+  color: var(--accent);
+}
+
+.connection {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--status-unreachable);
+}
+
+/* The word is the signal; the pulse only repeats it. */
+.connection[data-connection='live'] .pulse {
+  background: var(--status-ok);
+}
+
+.connection[data-connection='reconnecting'] .pulse,
+.connection[data-connection='connecting'] .pulse {
+  background: var(--status-warn);
+}
+
+.connection[data-connection='offline'] .pulse {
+  background: var(--status-critical);
+}
+
+.actions {
+  display: inline-flex;
+  gap: var(--space-1);
+  margin-left: auto;
+}

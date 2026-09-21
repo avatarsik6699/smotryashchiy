@@ -1,0 +1,136 @@
+.details {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.notice {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.charts {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.tables {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 900px) {
+  .charts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .tables {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.block {
+  min-width: 0;
+}
+
+.blockTitle {
+  margin: 0 0 var(--space-1);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 400;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.list > li {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+.row {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0 var(--space-3);
+}
+
+.disk {
+  display: grid;
+  min-width: 0;
+  align-items: center;
+  gap: 0 var(--space-2);
+  grid-template-columns: minmax(0, 1.2fr) minmax(48px, 1fr) minmax(0, 1.4fr);
+}
+
+.diskName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diskText {
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.meter {
+  min-width: 0;
+}
+
+.track {
+  height: 6px;
+  overflow: hidden;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+}
+
+.indicator {
+  height: 100%;
+  background: var(--accent);
+}
+
+.event {
+  display: grid;
+  min-width: 0;
+  gap: 0 var(--space-2);
+  grid-template-columns: auto auto minmax(0, 1fr);
+}
+
+.message {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Text always names the level or status; the color only repeats it. */
+.level[data-level='warn'],
+.check[data-status='warn'] {
+  color: var(--status-warn);
+}
+
+.level[data-level='error'],
+.level[data-level='critical'],
+.check[data-status='critical'] {
+  color: var(--status-critical);
+}
+
+.level[data-level='info'],
+.check[data-status='ok'] {
+  color: var(--text-muted);
+}

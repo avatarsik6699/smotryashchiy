@@ -1,0 +1,14 @@
+.ledger {
+  min-width: 0;
+  border-top: 1px solid var(--hairline);
+}
+
+.link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}

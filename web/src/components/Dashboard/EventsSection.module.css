@@ -1,0 +1,76 @@
+.log {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.entry {
+  display: grid;
+  min-width: 0;
+  align-items: baseline;
+  gap: 0 var(--space-3);
+  padding: 6px 0;
+  border-bottom: 1px solid var(--hairline);
+  grid-template-columns: 72px 64px minmax(0, 160px) minmax(0, 1fr);
+}
+
+.time,
+.host {
+  color: var(--text-muted);
+}
+
+.host {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.message {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.level {
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+}
+
+.level[data-level='info'] {
+  color: var(--text-muted);
+}
+
+.level[data-level='warn'] {
+  color: var(--status-warn);
+}
+
+.level[data-level='error'],
+.level[data-level='critical'] {
+  color: var(--status-critical);
+}
+
+@media (max-width: 720px) {
+  .entry {
+    grid-template-columns: 72px minmax(0, 1fr);
+    grid-template-areas:
+      'time level'
+      'host host'
+      'message message';
+  }
+
+  .time {
+    grid-area: time;
+  }
+
+  .level {
+    grid-area: level;
+  }
+
+  .host {
+    grid-area: host;
+  }
+
+  .message {
+    grid-area: message;
+  }
+}

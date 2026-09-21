@@ -46,3 +46,24 @@ input {
   white-space: nowrap;
   border: 0;
 }
+
+/* Browser surfaces carry the design too: selection, caret, scrollbars, disabled cursor. */
+::selection {
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+  color: inherit;
+}
+
+input {
+  caret-color: var(--accent);
+}
+
+* {
+  scrollbar-color: var(--hairline) transparent;
+  scrollbar-width: thin;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition-duration: 0.01ms !important;
+  }
+}

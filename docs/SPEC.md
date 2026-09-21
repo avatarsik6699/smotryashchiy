@@ -7,7 +7,7 @@
 
 | Field | Value |
 |-------|-------|
-| Document Version | `v1.5` |
+| Document Version | `v1.6` |
 | Date | `2026-09-21` |
 | Architect / Owner | `avatarsik666@gmail.com` |
 | Stack | See [docs/STACK.md](./STACK.md) |
@@ -285,6 +285,16 @@ no threshold colors (alerting is deferred). Design baseline: `docs/reference/DES
 canvas, one mono stack, 2 px radius, hairlines, no shadows), following `prefers-color-scheme` with dark as
 the default. Every chart has a textual alternative; keyboard use and narrow widths (rows stack ≤ 900 px)
 are first-class; WCAG 2.2 AA.
+
+**Derived values** (computed in the UI from the §4c catalog): current values come from `latest=true`
+and are marked `—` when the series has no sample in the last 5 minutes; sparklines and detail charts use
+the last hour (`step=60` for the overview, raw 10 s for one expanded host); the disk sparkline follows the
+mount with the highest `disk.used_percent`; network throughput is the sum over interfaces of
+`Δcounter/Δt` between consecutive samples (a counter that decreases is a reset and yields no point for
+that interval); uptime is `uptime.seconds` formatted `14d 06h`. Live frames from §4.6 update current
+values and extend series tails; a full refresh runs every 60 s and after every reconnect. The connection
+is shown as text (`live`, `reconnecting`, `offline`); reconnect backoff is 1 s doubling to 10 s, and after two
+failed attempts a lost session (e.g. a server restart) shows the login form instead of waiting.
 
 **Chart layout contract** (uPlot): legends, tick labels and tooltips never extend beyond the chart
 container at any width; the page never scrolls horizontally; empty or single-point series show a text

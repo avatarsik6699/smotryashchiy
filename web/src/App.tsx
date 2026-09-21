@@ -1,6 +1,6 @@
 import { Button } from '@base-ui/react/button'
 import { Login } from './components/Login/Login'
-import { Shell } from './components/Shell/Shell'
+import { Dashboard } from './components/Dashboard/Dashboard'
 import { useSession } from './session/useSession'
 
 export function App() {
@@ -23,6 +23,6 @@ export function App() {
     case 'anonymous':
       return <Login onLogin={session.login} />
     case 'authenticated':
-      return <Shell onLogout={session.logout} />
+      return <Dashboard onLogout={session.logout} />
   }
 }

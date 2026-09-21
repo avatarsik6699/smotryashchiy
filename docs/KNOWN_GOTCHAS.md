@@ -118,6 +118,36 @@ Carry these into the first contract tests instead of rediscovering them in produ
 - **Fix**: ignore the contents (`web/dist/*`) and add `!web/dist/.gitkeep`. Always verify with
   `git clone . /tmp/x && cd /tmp/x && go build ./...` after touching embed inputs.
 
+### `vi.unstubAllGlobals()` also removes the global stubs from the test setup
+
+- **Symptoms**: every component test after the first one crashes (`matchMedia is not a function`).
+- **Fix**: `web/src/test/setup.ts` assigns `ResizeObserver` and `matchMedia` directly (not with `vi.stubGlobal`),
+  so tests may call `vi.unstubAllGlobals()` freely.
+
+### A grid track sized by content lets a canvas widen the whole page
+
+- **Symptoms**: horizontal page scroll on narrow screens although every chart "fits" its container.
+- **Fix**: every grid that holds charts uses `minmax(0, 1fr)` tracks and `min-width: 0` on items; the chart box
+  has `overflow: hidden` (SPEC §5 chart layout contract). Never `max-width: 100%` inside an auto track.
+
+### Playwright/CDP `setOffline` does not drop an open WebSocket
+
+- **Symptoms**: "offline" emulation leaves the stream `live`; reconnect behavior cannot be exercised.
+- **Fix**: put a TCP proxy between browser and server that can destroy connections and refuse new ones while
+  the session stays valid (the throwaway `proxy.mjs` used for Change 07 verification).
+
+### Restarting the server logs every browser out (sessions are in memory)
+
+- **Symptoms**: after a restart the WebSocket upgrade is refused with 401, which the browser reports like any
+  other failure, so the page sat in "offline" until the next 60 s refresh.
+- **Fix**: after two failed reconnects `StreamClient` asks `GET /api/auth/session`; a "not authenticated" answer
+  shows the login form within ~1 s. Agents are unaffected (they use the tunnel, not sessions).
+
+### Base UI 1.8 accordion: rows are tab stops, arrow keys do not move focus
+
+- **Symptoms**: a keyboard test expecting ArrowDown to move between rows fails.
+- **Fix**: the `loopFocus`/`orientation` props are deprecated no-ops; navigate with Tab, toggle with Enter/Space.
+
 ### Docker-owned files break host operations (`EACCES` / `EPERM` / read-only)
 
 - **Symptoms**: file operations fail with `EACCES`, `EPERM`, "Permission denied" or

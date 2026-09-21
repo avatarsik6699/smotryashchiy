@@ -9,7 +9,7 @@
 | Change | `05` |
 | Slug | `agent-collectors-run-loop` |
 | Title | Agent Collectors and Run Loop |
-| Status | `active` |
+| Status | `archived` |
 | Branch | `feature/05-agent-collectors-run-loop` |
 
 ---

@@ -9,7 +9,7 @@
 | Change | `08` |
 | Slug | `uptime-prober` |
 | Title | Uptime Prober |
-| Status | `active` |
+| Status | `archived` |
 | Branch | `feature/08-uptime-prober` |
 
 ---

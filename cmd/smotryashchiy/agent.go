@@ -6,14 +6,18 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"runtime"
 	"syscall"
 
 	"github.com/avatarsik6699/smotryashchiy/internal/agent"
+	"github.com/avatarsik6699/smotryashchiy/internal/agent/collect"
 )
 
-const agentUsage = "usage: smotryashchiy agent enroll --server URL --secret S [--config PATH] | agent push-file FILE [--config PATH] [--key KEY]"
+const agentUsage = "usage: smotryashchiy agent enroll --server URL --secret S [--config PATH] | agent run [--config PATH] [--interval 10s] [--spool-dir DIR] | agent push-file FILE [--config PATH] [--key KEY]"
 
 const defaultAgentConfig = "agent.json"
 
@@ -39,6 +43,8 @@ func runAgent(args []string, stdout io.Writer) error {
 		}
 		fmt.Fprintf(stdout, "enrolled as host %s (tunnel address %s); config written to %s\n", cfg.HostID, cfg.TunnelIP, *path)
 		return nil
+	case "run":
+		return runAgentLoop(ctx, args[1:])
 	case "push-file":
 		// Flags may follow the file operand, so split it off before parsing.
 		if len(args) < 2 {
@@ -71,4 +77,43 @@ func runAgent(args []string, stdout io.Writer) error {
 	default:
 		return errors.New(agentUsage)
 	}
+}
+
+// runAgentLoop is `agent run`: collect on an interval and deliver through one persistent tunnel.
+func runAgentLoop(ctx context.Context, args []string) error {
+	if runtime.GOOS != "linux" {
+		return fmt.Errorf("agent run: host metrics are only supported on Linux, this is %s", runtime.GOOS)
+	}
+	fs := flag.NewFlagSet("agent run", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	path := fs.String("config", defaultAgentConfig, "agent config path")
+	interval := fs.Duration("interval", agent.DefaultInterval, "collection interval (5s..5m)")
+	spoolDir := fs.String("spool-dir", "", "offline buffer directory (default: <config dir>/spool)")
+	if err := fs.Parse(args); err != nil || fs.NArg() != 0 {
+		return errors.New(agentUsage)
+	}
+	if err := agent.ValidateInterval(*interval); err != nil {
+		return err
+	}
+	cfg, err := agent.LoadConfig(*path)
+	if err != nil {
+		return err
+	}
+	if *spoolDir == "" {
+		*spoolDir = filepath.Join(filepath.Dir(*path), "spool")
+	}
+	return agent.Run(ctx, agent.RunConfig{
+		Interval: *interval,
+		SpoolDir: *spoolDir,
+		Collectors: []collect.Collector{
+			&collect.CPU{Proc: collect.DefaultProc},
+			collect.Memory{Proc: collect.DefaultProc},
+			collect.NewDisk(),
+			collect.Network{Proc: collect.DefaultProc},
+			collect.Load{Proc: collect.DefaultProc},
+			collect.Uptime{Proc: collect.DefaultProc},
+		},
+		Dial: func(ctx context.Context) (agent.Uplink, error) { return agent.Dial(ctx, cfg) },
+		Log:  slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})),
+	})
 }

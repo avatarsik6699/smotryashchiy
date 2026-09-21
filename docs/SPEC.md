@@ -7,7 +7,7 @@
 
 | Field | Value |
 |-------|-------|
-| Document Version | `v1.3` |
+| Document Version | `v1.4` |
 | Date | `2026-09-21` |
 | Architect / Owner | `avatarsik666@gmail.com` |
 | Stack | See [docs/STACK.md](./STACK.md) |
@@ -196,9 +196,41 @@ address via `host_peers`, never from a client-supplied ID. Responses: `200`
 error, `413` body over 1 MiB, `429` when a host exceeds 10 batches/s. It calls the same
 `Service.Ingest` as tests and publishes accepted records to the live stream (§4.6).
 
-**Agent (this change).** Only `agent enroll` (keypair, enrollment call, writes
+**Agent (Change 04).** Only `agent enroll` (keypair, enrollment call, writes
 `agent.json` config `0600`) and a `agent push-file FILE` helper that sends a §4.1 batch through the
 tunnel; collectors and the run loop are Change 05.
+
+## 4c. Agent runtime and metric catalog (Change 05)
+
+`smotryashchiy agent run [--config PATH] [--interval 10s] [--spool-dir DIR]` is the long-running
+agent (Linux amd64/arm64; other platforms exit with a clear error). It keeps **one persistent
+tunnel**, and every `interval` (default 10 s, allowed 5 s–5 min) collects one batch (§4.1) and sends
+it to `POST /api/ingest`. Stopping on SIGINT/SIGTERM is graceful: the batch in flight is spooled, not
+lost.
+
+**Collectors** read `/proc` and `statfs` directly (no third-party agent library, small footprint).
+A collector that cannot read its source omits its metrics for that tick and logs once per failure
+streak; it never emits a fabricated `0` (unknown stays unknown; a *measured* zero is emitted).
+
+| Metric | Labels | Meaning |
+|--------|--------|---------|
+| `cpu.usage_percent` | — | 0–100, non-idle share of all CPUs since the previous tick (iowait counts as idle); the first tick emits none |
+| `memory.total_bytes`, `memory.used_bytes`, `memory.used_percent` | — | used = total − `MemAvailable` |
+| `swap.total_bytes`, `swap.used_bytes`, `swap.used_percent` | — | a host without swap reports total 0 and used_percent 0 |
+| `disk.total_bytes`, `disk.used_bytes`, `disk.used_percent` | `mount`, `device` | real filesystems only (ext2/3/4, xfs, btrfs, zfs, f2fs), one per device, ≤ 16 mounts; used_percent follows `df` (non-root-reserved blocks excluded) |
+| `network.rx_bytes_total`, `network.tx_bytes_total` | `interface` | monotonically increasing counters excluding `lo`; consumers derive rates and handle counter resets |
+| `load.avg_1m`, `load.avg_5m`, `load.avg_15m` | — | `/proc/loadavg` |
+| `uptime.seconds` | — | `/proc/uptime` |
+
+**Offline buffer.** Every batch is first written to a durable spool (directory, mode `0700`, files
+`0600`, atomic write) together with its own `Idempotency-Key`, then sent oldest-first. A batch leaves
+the spool only after a `200` (including `replayed`). Bounds: 5000 batches / 64 MiB, oldest dropped
+first with a logged counter. Restart resumes from the spool.
+
+**Retry policy.** Network errors, `429`, `5xx`, `401` → keep the batch, exponential backoff 1 s → 60 s
+with jitter, rebuild the tunnel after 3 consecutive failures. `400`/`413` → the batch can never be
+accepted: drop it, log the server's field-addressed error, continue. Producer time > 5 min ahead of
+the server is a `400`; the agent logs a clock-skew hint.
 
 ## 4a. Other interfaces
 

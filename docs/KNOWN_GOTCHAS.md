@@ -65,6 +65,20 @@ Carry these into the first contract tests instead of rediscovering them in produ
 - **Fix**: start the server with `& echo $! > pid` and `kill $(cat pid)`; never match on a command
   line that also appears in the script itself.
 
+### WSL/VM stalls of ~3 s look like agent or network bugs
+
+- **Symptoms**: in a real-process verification, metric timestamps show a gap of 8.3 s instead of 5 s
+  (two or three times per run), always the same size.
+- **Root cause**: the environment freezes for ~3.3 s (a 1 s `sleep` in a watchdog took 4.34 s at the
+  same moments); the agent's ticker simply lost those seconds.
+- **Fix**: none in code. Before investigating a timing gap, run a `while true; do date +%s.%N; sleep 1`
+  watchdog beside the experiment and compare.
+
+### Agent "memory used" intentionally differs from `free`
+
+- `memory.used_bytes` = `MemTotal - MemAvailable` (what applications cannot get without swapping),
+  while `free` prints `total - free - buff/cache`. Compare against `MemAvailable`, not `free`'s used column.
+
 ### Docker-owned files break host operations (`EACCES` / `EPERM` / read-only)
 
 - **Symptoms**: file operations fail with `EACCES`, `EPERM`, "Permission denied" or

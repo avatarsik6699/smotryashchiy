@@ -147,20 +147,29 @@ type Counts struct {
 	Events  int `json:"events"`
 }
 
-// Push sends batch (a §4.1 wire batch) through the tunnel described by cfg. An empty key gets a
-// random Idempotency-Key.
-func Push(ctx context.Context, cfg Config, batch []byte, key string) (Result, error) {
-	if key == "" {
-		buf := make([]byte, 16)
-		if _, err := rand.Read(buf); err != nil {
-			return Result{}, fmt.Errorf("agent: generate idempotency key: %w", err)
-		}
-		key = hex.EncodeToString(buf)
-	}
+// StatusError is a non-200 answer from the ingest endpoint.
+type StatusError struct {
+	Code int
+	Body string
+}
+
+func (e *StatusError) Error() string {
+	return fmt.Sprintf("agent: ingest rejected (%d): %s", e.Code, e.Body)
+}
+
+// Session is one tunnel to the server that can carry many batches.
+type Session struct {
+	tunnel *transport.Client
+	url    string
+	client *http.Client
+}
+
+// Dial brings up the tunnel described by cfg and waits for its handshake.
+func Dial(ctx context.Context, cfg Config) (*Session, error) {
 	if err := cfg.validate(); err != nil {
-		return Result{}, err
+		return nil, err
 	}
-	tunnel, err := transport.NewClient(transport.ClientConfig{
+	tunnel, err := transport.NewClient(ctx, transport.ClientConfig{
 		PrivateKey:      cfg.PrivateKey,
 		ServerPublicKey: cfg.ServerPublicKey,
 		Endpoint:        cfg.ServerEndpoint,
@@ -168,28 +177,60 @@ func Push(ctx context.Context, cfg Config, batch []byte, key string) (Result, er
 		ServerTunnelIP:  netip.MustParseAddr(cfg.ServerTunnelIP),
 	})
 	if err != nil {
-		return Result{}, err
+		return nil, err
 	}
-	defer tunnel.Close()
-	url := fmt.Sprintf("http://%s/api/ingest", netip.AddrPortFrom(tunnel.ServerIP(), transport.IngestPort))
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(batch))
+	return &Session{
+		tunnel: tunnel,
+		url:    fmt.Sprintf("http://%s/api/ingest", netip.AddrPortFrom(tunnel.ServerIP(), transport.IngestPort)),
+		client: tunnel.HTTPClient(httpTimeout),
+	}, nil
+}
+
+// Send posts batch with its Idempotency-Key. A non-200 answer is returned as *StatusError.
+func (s *Session) Send(ctx context.Context, key string, batch []byte) (Result, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.url, bytes.NewReader(batch))
 	if err != nil {
 		return Result{}, fmt.Errorf("agent: build ingest request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Idempotency-Key", key)
-	resp, err := tunnel.HTTPClient(httpTimeout).Do(req)
+	resp, err := s.client.Do(req)
 	if err != nil {
 		return Result{}, fmt.Errorf("agent: ingest request: %w", err)
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
 	if resp.StatusCode != http.StatusOK {
-		return Result{}, fmt.Errorf("agent: ingest rejected (%d): %s", resp.StatusCode, strings.TrimSpace(string(raw)))
+		return Result{}, &StatusError{Code: resp.StatusCode, Body: strings.TrimSpace(string(raw))}
 	}
 	var out Result
 	if err := json.Unmarshal(raw, &out); err != nil {
 		return Result{}, fmt.Errorf("agent: decode ingest response: %w", err)
 	}
 	return out, nil
+}
+
+// Close shuts the tunnel down.
+func (s *Session) Close() { s.tunnel.Close() }
+
+// Push sends one batch through a short-lived tunnel. An empty key gets a random Idempotency-Key.
+func Push(ctx context.Context, cfg Config, batch []byte, key string) (Result, error) {
+	if key == "" {
+		key = NewKey()
+	}
+	sess, err := Dial(ctx, cfg)
+	if err != nil {
+		return Result{}, err
+	}
+	defer sess.Close()
+	return sess.Send(ctx, key, batch)
+}
+
+// NewKey returns a random Idempotency-Key.
+func NewKey() string {
+	buf := make([]byte, 16)
+	if _, err := rand.Read(buf); err != nil {
+		panic(fmt.Sprintf("agent: crypto/rand failed: %v", err)) // no entropy: nothing sensible to do
+	}
+	return hex.EncodeToString(buf)
 }

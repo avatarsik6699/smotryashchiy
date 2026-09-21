@@ -25,6 +25,7 @@
 go version                 # >= 1.26.6 (go.mod triggers an automatic toolchain download if older)
 cp .env.example .env       # optional; every variable has a development default
 go run ./cmd/smotryashchiy admin host create --name vps-1   # prints the one-time agent enroll command
+go run ./cmd/smotryashchiy agent run --config agent.json --interval 10s   # after `agent enroll`; Linux only
 go run ./cmd/smotryashchiy server   # prints a one-time development admin password
 printf '%s\n' "$PASSWORD" | go run ./cmd/smotryashchiy admin set-password   # >= 24 bytes, stdin only
 ```
@@ -85,7 +86,9 @@ cmd/smotryashchiy/   # single entrypoint, mode subcommands
 internal/platform/   # config, db (migrations), httpserver, apierror
 internal/auth/       # admin password, sessions (domain/application/infrastructure/interfaces)
 internal/transport/  # userspace WireGuard server/client wrappers (keys, peers, tunnel listener)
-internal/agent/      # agent client: enroll, push (collectors + run loop come later)
+internal/agent/      # agent: enroll, persistent tunnel session, sender (retry/backoff), run loop, batch builder
+internal/agent/collect/  # /proc + statfs collectors (cpu, memory/swap, disk, network, load, uptime)
+internal/agent/spool/    # durable bounded FIFO of unsent batches (offline buffer)
 internal/telemetry/  # Metric/Check/Event contract, ingest service, SQLite store, read API,
                      # hourly rollups + retention jobs (Maintenance), live stream hub + WebSocket
                      # bounded contexts talk through ports (application interfaces), not internals

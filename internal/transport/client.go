@@ -36,8 +36,8 @@ type ClientConfig struct {
 	ServerTunnelIP  netip.Addr
 }
 
-// NewClient brings up the agent's tunnel device.
-func NewClient(cfg ClientConfig) (*Client, error) {
+// NewClient brings up the agent's tunnel device and waits for the first handshake (or ctx).
+func NewClient(ctx context.Context, cfg ClientConfig) (*Client, error) {
 	priv, err := hexKey(cfg.PrivateKey)
 	if err != nil {
 		return nil, err
@@ -62,7 +62,7 @@ func NewClient(cfg ClientConfig) (*Client, error) {
 		return nil, fmt.Errorf("transport: bring device up: %w", err)
 	}
 	c := &Client{dev: dev, net: tnet, serverIP: cfg.ServerTunnelIP}
-	if err := c.waitHandshake(handshakeTimeout); err != nil {
+	if err := c.waitHandshake(ctx, handshakeTimeout); err != nil {
 		dev.Close()
 		return nil, err
 	}
@@ -73,9 +73,12 @@ func NewClient(cfg ClientConfig) (*Client, error) {
 // makes wireguard-go start a second, concurrent handshake; the server drops it as flooding and
 // the client discards the first exchange's state, which stalls the connection for the 5 s rekey
 // timeout (see docs/KNOWN_GOTCHAS.md).
-func (c *Client) waitHandshake(timeout time.Duration) error {
+func (c *Client) waitHandshake(ctx context.Context, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		dump, err := c.dev.IpcGet()
 		if err != nil {
 			return fmt.Errorf("transport: read device state: %w", err)

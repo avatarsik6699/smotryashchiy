@@ -11,6 +11,7 @@ import (
 // publicPaths lists the only routes exempt from session gating: login itself and health checks.
 var publicPaths = map[string]bool{
 	"/api/auth/login": true,
+	"/api/enroll":     true,
 	"/healthz":        true,
 	"/health/ready":   true,
 }

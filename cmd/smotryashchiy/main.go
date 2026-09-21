@@ -10,7 +10,7 @@ import (
 // release is the build-time release SHA, set with -ldflags "-X main.release=<sha>".
 var release = "development"
 
-const usage = "usage: smotryashchiy server | agent | admin set-password"
+const usage = "usage: smotryashchiy server | agent enroll|push-file | admin set-password|host create"
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
@@ -26,8 +26,7 @@ func run(args []string, stdin *os.File, stdout, stderr *os.File) int {
 	case "server":
 		err = runServer(stdout)
 	case "agent":
-		fmt.Fprintln(stderr, "agent: not implemented yet (planned for Stage 2)")
-		return 2
+		err = runAgent(args[1:], stdout)
 	case "admin":
 		err = runAdmin(args[1:], stdin, stdout)
 	default:

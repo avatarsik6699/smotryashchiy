@@ -3,6 +3,7 @@ package domain
 
 import (
 	"encoding/json"
+	"net/netip"
 	"time"
 )
 
@@ -91,4 +92,12 @@ type RollupPoint struct {
 	Min    float64
 	Max    float64
 	Avg    float64
+}
+
+// Peer binds an enrolled host to its WireGuard public key and tunnel address.
+type Peer struct {
+	HostID     string
+	PublicKey  string // base64
+	TunnelIP   netip.Addr
+	EnrolledAt time.Time
 }

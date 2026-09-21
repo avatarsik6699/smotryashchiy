@@ -4,6 +4,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"net/netip"
 	"os"
 	"regexp"
@@ -29,6 +30,12 @@ type Config struct {
 	RawRetentionDays int
 	// RollupRetentionDays is the TTL of hourly metric rollups.
 	RollupRetentionDays int
+	// WGPort is the UDP port of the in-process WireGuard endpoint (docs/SPEC.md §4b).
+	WGPort int
+	// TunnelCIDR is the tunnel subnet; the server takes its first host address.
+	TunnelCIDR netip.Prefix
+	// PublicEndpoint is the host:port (UDP) agents dial for WireGuard; empty until configured.
+	PublicEndpoint string
 }
 
 const (
@@ -40,6 +47,12 @@ const (
 	envProxies    = "SMOTRYASHCHIY_TRUSTED_PROXY_CIDRS"
 	envRawDays    = "SMOTRYASHCHIY_RAW_RETENTION_DAYS"
 	envRollupDays = "SMOTRYASHCHIY_ROLLUP_RETENTION_DAYS"
+	envWGPort     = "SMOTRYASHCHIY_WG_PORT"
+	envTunnelCIDR = "SMOTRYASHCHIY_TUNNEL_CIDR"
+	envEndpoint   = "SMOTRYASHCHIY_PUBLIC_ENDPOINT"
+
+	defaultWGPort     = 51820
+	defaultTunnelCIDR = "10.99.0.0/16"
 
 	defaultRawRetentionDays    = 30
 	defaultRollupRetentionDays = 396 // 13 months
@@ -70,6 +83,22 @@ func Load(defaultRelease string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	wgPort, err := getPort(envWGPort, defaultWGPort)
+	if err != nil {
+		return Config{}, err
+	}
+	tunnelCIDR, err := parseTunnelCIDR(getOr(envTunnelCIDR, defaultTunnelCIDR))
+	if err != nil {
+		return Config{}, err
+	}
+	endpoint := strings.TrimSpace(os.Getenv(envEndpoint))
+	if endpoint != "" {
+		if _, err := netip.ParseAddrPort(endpoint); err != nil {
+			if host, port, splitErr := net.SplitHostPort(endpoint); splitErr != nil || host == "" || !validPort(port) {
+				return Config{}, fmt.Errorf("config: %s must be host:port, got %q", envEndpoint, endpoint)
+			}
+		}
+	}
 	cfg := Config{
 		Addr:              getOr(envAddr, ":8080"),
 		DBPath:            getOr(envDBPath, "./data/smotryashchiy.db"),
@@ -80,6 +109,9 @@ func Load(defaultRelease string) (Config, error) {
 
 		RawRetentionDays:    rawDays,
 		RollupRetentionDays: rollupDays,
+		WGPort:              wgPort,
+		TunnelCIDR:          tunnelCIDR,
+		PublicEndpoint:      endpoint,
 	}
 	if cfg.Production {
 		if !releasePattern.MatchString(cfg.Release) {
@@ -87,6 +119,9 @@ func Load(defaultRelease string) (Config, error) {
 		}
 		if !cfg.SecureCookies {
 			return Config{}, fmt.Errorf("config: %s must be true in production", envSecure)
+		}
+		if cfg.PublicEndpoint == "" {
+			return Config{}, fmt.Errorf("config: %s (agent-facing WireGuard host:port) is required in production", envEndpoint)
 		}
 		if len(cfg.TrustedProxyCIDRs) == 0 {
 			return Config{}, fmt.Errorf("config: %s requires at least one CIDR in production", envProxies)
@@ -124,6 +159,33 @@ func getPositiveInt(key string, fallback int) (int, error) {
 		return 0, fmt.Errorf("config: %s must be a positive integer number of days, got %q", key, value)
 	}
 	return parsed, nil
+}
+
+func validPort(raw string) bool {
+	n, err := strconv.Atoi(raw)
+	return err == nil && n >= 1 && n <= 65535
+}
+
+func getPort(key string, fallback int) (int, error) {
+	value, ok := os.LookupEnv(key)
+	if !ok || strings.TrimSpace(value) == "" {
+		return fallback, nil
+	}
+	if !validPort(strings.TrimSpace(value)) {
+		return 0, fmt.Errorf("config: %s must be a port between 1 and 65535, got %q", key, value)
+	}
+	n, _ := strconv.Atoi(strings.TrimSpace(value))
+	return n, nil
+}
+
+// parseTunnelCIDR requires an IPv4 prefix no longer than /24 (room for hosts) and no shorter than
+// /8, masked to its network address.
+func parseTunnelCIDR(value string) (netip.Prefix, error) {
+	prefix, err := netip.ParsePrefix(strings.TrimSpace(value))
+	if err != nil || !prefix.Addr().Is4() || prefix.Bits() < 8 || prefix.Bits() > 24 {
+		return netip.Prefix{}, fmt.Errorf("config: %s must be an IPv4 CIDR between /8 and /24, got %q", envTunnelCIDR, value)
+	}
+	return prefix.Masked(), nil
 }
 
 func parsePrefixes(value string) ([]netip.Prefix, error) {

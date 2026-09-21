@@ -14,6 +14,7 @@
 | Backend | Go 1.26.6 minimum (`go.mod`; earlier patches carry fixed stdlib CVEs), single binary with `server` / `agent` / `admin` modes |
 | Database | SQLite via `modernc.org/sqlite` (pure Go, WAL, single writer), embedded forward-only migrations |
 | Realtime | `github.com/coder/websocket` (server-to-client stream at `/api/stream`) |
+| Transport | `golang.zx2c4.com/wireguard` (userspace WireGuard + gVisor netstack; pure Go, no root, no kernel module) |
 | Frontend | Embedded static SPA — pending (see SPEC §8) |
 | Transport | Userspace WireGuard inside the binary — pending Stage-2 spike |
 | CI | GitHub Actions (`.github/workflows/ci.yml`) on pull requests and pushes to `main` |
@@ -23,6 +24,7 @@
 ```bash
 go version                 # >= 1.26.6 (go.mod triggers an automatic toolchain download if older)
 cp .env.example .env       # optional; every variable has a development default
+go run ./cmd/smotryashchiy admin host create --name vps-1   # prints the one-time agent enroll command
 go run ./cmd/smotryashchiy server   # prints a one-time development admin password
 printf '%s\n' "$PASSWORD" | go run ./cmd/smotryashchiy admin set-password   # >= 24 bytes, stdin only
 ```
@@ -33,6 +35,9 @@ printf '%s\n' "$PASSWORD" | go run ./cmd/smotryashchiy admin set-password   # >=
 |----------|---------|---------|
 | `SMOTRYASHCHIY_RAW_RETENTION_DAYS` | `30` | TTL of raw metrics, checks, events and ingestion batches |
 | `SMOTRYASHCHIY_ROLLUP_RETENTION_DAYS` | `396` | TTL of hourly metric rollups (13 months) |
+| `SMOTRYASHCHIY_WG_PORT` | `51820` | UDP port of the in-process WireGuard endpoint |
+| `SMOTRYASHCHIY_TUNNEL_CIDR` | `10.99.0.0/16` | Tunnel subnet (IPv4, /8../24); the server takes its first host address |
+| `SMOTRYASHCHIY_PUBLIC_ENDPOINT` | dev: `127.0.0.1:<udp port>` | Agent-facing `host:port` of the WireGuard UDP port; **required in production** |
 
 Other variables (`SMOTRYASHCHIY_ADDR`, `_DB_PATH`, `_PRODUCTION`, `_RELEASE`, `_SECURE_COOKIES`,
 `_TRUSTED_PROXY_CIDRS`) are documented in `internal/platform/config`.
@@ -79,6 +84,8 @@ Other variables (`SMOTRYASHCHIY_ADDR`, `_DB_PATH`, `_PRODUCTION`, `_RELEASE`, `_
 cmd/smotryashchiy/   # single entrypoint, mode subcommands
 internal/platform/   # config, db (migrations), httpserver, apierror
 internal/auth/       # admin password, sessions (domain/application/infrastructure/interfaces)
+internal/transport/  # userspace WireGuard server/client wrappers (keys, peers, tunnel listener)
+internal/agent/      # agent client: enroll, push (collectors + run loop come later)
 internal/telemetry/  # Metric/Check/Event contract, ingest service, SQLite store, read API,
                      # hourly rollups + retention jobs (Maintenance), live stream hub + WebSocket
                      # bounded contexts talk through ports (application interfaces), not internals

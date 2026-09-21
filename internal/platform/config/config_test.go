@@ -5,11 +5,13 @@ import (
 	"testing"
 )
 
+const ep = "monitor.example.com:51820"
+
 const sha = "0123456789abcdef0123456789abcdef01234567"
 
 func clearEnv(t *testing.T) {
 	t.Helper()
-	for _, k := range []string{envAddr, envDBPath, envProduction, envRelease, envSecure, envProxies, envRawDays, envRollupDays} {
+	for _, k := range []string{envAddr, envDBPath, envProduction, envRelease, envSecure, envProxies, envRawDays, envRollupDays, envWGPort, envTunnelCIDR, envEndpoint} {
 		t.Setenv(k, "")
 	}
 }
@@ -41,12 +43,13 @@ func TestLoadProductionContract(t *testing.T) {
 		release string
 		wantErr string
 	}{
-		{"valid", map[string]string{envProxies: "10.0.0.2/32"}, sha, ""},
-		{"development release", map[string]string{envProxies: "10.0.0.2/32"}, "development", envRelease},
-		{"short sha", map[string]string{envProxies: "10.0.0.2/32"}, "abc123", envRelease},
-		{"insecure cookies", map[string]string{envProxies: "10.0.0.2/32", envSecure: "false"}, sha, envSecure},
-		{"no proxies", nil, sha, envProxies},
-		{"bad cidr", map[string]string{envProxies: "nope"}, sha, "invalid CIDR"},
+		{"valid", map[string]string{envProxies: "10.0.0.2/32", envEndpoint: ep}, sha, ""},
+		{"no endpoint", map[string]string{envProxies: "10.0.0.2/32"}, sha, envEndpoint},
+		{"development release", map[string]string{envProxies: "10.0.0.2/32", envEndpoint: ep}, "development", envRelease},
+		{"short sha", map[string]string{envProxies: "10.0.0.2/32", envEndpoint: ep}, "abc123", envRelease},
+		{"insecure cookies", map[string]string{envProxies: "10.0.0.2/32", envEndpoint: ep, envSecure: "false"}, sha, envSecure},
+		{"no proxies", map[string]string{envEndpoint: ep}, sha, envProxies},
+		{"bad cidr", map[string]string{envProxies: "nope", envEndpoint: ep}, sha, "invalid CIDR"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -98,6 +101,37 @@ func TestLoadRejectsInvalidRetention(t *testing.T) {
 			t.Setenv(key, bad)
 			if _, err := Load("development"); err == nil || !strings.Contains(err.Error(), key) {
 				t.Fatalf("%s=%q: err = %v, want error naming the variable", key, bad, err)
+			}
+		}
+	}
+}
+
+func TestLoadTransportDefaultsAndOverrides(t *testing.T) {
+	clearEnv(t)
+	cfg, err := Load("development")
+	if err != nil || cfg.WGPort != 51820 || cfg.TunnelCIDR.String() != "10.99.0.0/16" || cfg.PublicEndpoint != "" {
+		t.Fatalf("defaults = %d %v %q, err = %v", cfg.WGPort, cfg.TunnelCIDR, cfg.PublicEndpoint, err)
+	}
+	t.Setenv(envWGPort, "40000")
+	t.Setenv(envTunnelCIDR, "10.7.3.9/24")
+	t.Setenv(envEndpoint, "monitor.example.com:40000")
+	cfg, err = Load("development")
+	if err != nil || cfg.WGPort != 40000 || cfg.TunnelCIDR.String() != "10.7.3.0/24" || cfg.PublicEndpoint != "monitor.example.com:40000" {
+		t.Fatalf("overrides = %d %v %q, err = %v", cfg.WGPort, cfg.TunnelCIDR, cfg.PublicEndpoint, err)
+	}
+}
+
+func TestLoadRejectsInvalidTransportSettings(t *testing.T) {
+	for key, bad := range map[string][]string{
+		envWGPort:     {"0", "70000", "abc"},
+		envTunnelCIDR: {"10.0.0.1", "fd00::/64", "10.0.0.0/30", "10.0.0.0/4"},
+		envEndpoint:   {"no-port", ":51820", "host:99999"},
+	} {
+		for _, v := range bad {
+			clearEnv(t)
+			t.Setenv(key, v)
+			if _, err := Load("development"); err == nil || !strings.Contains(err.Error(), key) {
+				t.Fatalf("%s=%q: err = %v, want error naming the variable", key, v, err)
 			}
 		}
 	}

@@ -47,6 +47,24 @@ Carry these into the first contract tests instead of rediscovering them in produ
 - **Symptoms**: SQL parse ambiguity when an upsert takes its rows from a `SELECT`.
 - **Fix**: keep an explicit `WHERE` (`RollupHour` has one) on any `INSERT ... SELECT ... ON CONFLICT`.
 
+### Two WireGuard handshakes from one key within ~20 ms stall for 5 s
+
+- **Symptoms**: a fresh tunnel from an already-known peer key occasionally takes exactly ~5 s to
+  connect (17 % of back-to-back pushes in a loop); the verbose log shows
+  `ConsumeMessageInitiation: handshake replay` on the server.
+- **Root cause**: `wireguard-go` rounds handshake timestamps to ~16.7 ms (anti-fingerprinting) and
+  rate-limits initiations per peer to one per 20 ms. A second initiation inside that window is
+  treated as a replay and only retried after the 5 s rekey timeout.
+- **Fix**: none needed for a long-lived agent tunnel. Code or tests that create fresh tunnels for the
+  same key back to back must space them apart (tests use `handshakeSpacing` = 40 ms).
+  `transport.NewClient` waits for the first handshake so failures are fast and explicit.
+
+### `pkill -f` / `pgrep -f` in verification scripts can kill the calling shell
+
+- **Symptoms**: a smoke script dies with exit 144 or the "restarted" server is still the old one.
+- **Fix**: start the server with `& echo $! > pid` and `kill $(cat pid)`; never match on a command
+  line that also appears in the script itself.
+
 ### Docker-owned files break host operations (`EACCES` / `EPERM` / read-only)
 
 - **Symptoms**: file operations fail with `EACCES`, `EPERM`, "Permission denied" or

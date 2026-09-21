@@ -63,7 +63,7 @@ func TestRunDispatch(t *testing.T) {
 	if code := run([]string{"bogus"}, null, null, null); code != 2 {
 		t.Errorf("bogus = %d", code)
 	}
-	if code := run([]string{"agent"}, null, null, null); code != 2 {
-		t.Errorf("agent stub = %d", code)
+	if code := run([]string{"agent"}, null, null, null); code != 1 {
+		t.Errorf("agent without subcommand = %d, want usage error 1", code)
 	}
 }

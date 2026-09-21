@@ -7,8 +7,10 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -22,18 +24,23 @@ import (
 	"github.com/avatarsik6699/smotryashchiy/internal/telemetry/application"
 	"github.com/avatarsik6699/smotryashchiy/internal/telemetry/domain"
 	"github.com/avatarsik6699/smotryashchiy/internal/telemetry/infrastructure"
+	"github.com/avatarsik6699/smotryashchiy/internal/transport"
 )
 
 var clock = time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)
 
 type env struct {
-	rawDB   *sql.DB
-	store   *infrastructure.Store
-	svc     *application.Service
-	hub     *application.Hub
-	handler http.Handler
-	host    domain.Host
-	cookie  *http.Cookie
+	rawDB  *sql.DB
+	store  *infrastructure.Store
+	svc    *application.Service
+	hub    *application.Hub
+	tunnel *transport.Server
+	enroll *application.EnrollmentService
+	// enrollNow is the enrollment service's clock; tests move it to expire secrets.
+	enrollNow time.Time
+	handler   http.Handler
+	host      domain.Host
+	cookie    *http.Cookie
 }
 
 func newEnv(t *testing.T) *env {
@@ -63,6 +70,29 @@ func newEnv(t *testing.T) *env {
 	authhttp.NewHandlers(auth, authhttp.Options{}).Register(mux)
 	NewHandlers(svc).Register(mux)
 	NewStreamHandlers(hub).Register(mux)
+	e := &env{}
+	key, err := store.ServerKey(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	subnet := netip.MustParsePrefix("10.99.0.0/16")
+	tunnel, err := transport.NewServer(key, 0, netip.MustParseAddr("10.99.0.1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(tunnel.Close)
+	e.enrollNow = clock
+	enroll := application.NewEnrollmentService(store, tunnel, subnet, application.ServerInfo{
+		PublicKey: tunnel.PublicKey(), Endpoint: fmt.Sprintf("127.0.0.1:%d", tunnel.UDPPort()), TunnelIP: tunnel.TunnelIP(),
+	}, func() time.Time { return e.enrollNow })
+	NewEnrollHandlers(enroll).Register(mux)
+	tunnelLn, err := tunnel.Listen(transport.IngestPort)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tctx, stopTunnel := context.WithCancel(context.Background())
+	t.Cleanup(stopTunnel)
+	go func() { _ = ServeTunnel(tctx, tunnelLn, NewIngestHandlers(svc, enroll)) }()
 	handler := authhttp.RequireSession(auth)(mux)
 
 	login := httptest.NewRecorder()
@@ -70,7 +100,9 @@ func newEnv(t *testing.T) *env {
 	if login.Code != http.StatusNoContent {
 		t.Fatalf("login = %d", login.Code)
 	}
-	return &env{rawDB: sqlDB, store: store, svc: svc, hub: hub, handler: handler, host: host, cookie: login.Result().Cookies()[0]}
+	e.rawDB, e.store, e.svc, e.hub, e.tunnel, e.enroll = sqlDB, store, svc, hub, tunnel, enroll
+	e.handler, e.host, e.cookie = handler, host, login.Result().Cookies()[0]
+	return e
 }
 
 func (e *env) get(t *testing.T, target string, authed bool) (int, string) {

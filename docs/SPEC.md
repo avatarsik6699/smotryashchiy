@@ -7,7 +7,7 @@
 
 | Field | Value |
 |-------|-------|
-| Document Version | `v1.2` |
+| Document Version | `v1.3` |
 | Date | `2026-09-21` |
 | Architect / Owner | `avatarsik666@gmail.com` |
 | Stack | See [docs/STACK.md](./STACK.md) |
@@ -44,7 +44,7 @@ looks healthy; observe only.
 | Built-in uptime checks: HTTP, TCP, TLS expiry | Multi-user / RBAC / audit log |
 | Log/event collection: journald, Docker logs | Second notification channel |
 | Security signals: fail2ban bans and jail status | Distributed / high-cardinality storage |
-| Alert rules, firing → resolved lifecycle, Telegram | Off-host backup (later) |
+| ~~Alert rules, firing → resolved lifecycle, Telegram~~ *(deferred, see §7)* | Off-host backup (later) |
 | Embedded static web UI, single admin password | Escalation / repeat notifications |
 
 ---
@@ -161,6 +161,45 @@ disconnected, never allowed to stall ingest; clients recover state via the read 
 The server sends ping every 30 s and drops unresponsive connections. Ingest stays HTTP-only and lands
 in Stage 2; Change 03 publishes from the ingest service so that stage needs no stream work.
 
+## 4b. Transport, enrollment and ingest (Change 04)
+
+**Transport spike (passed 2026-09-21).** Change 04 opened with a spike proving userspace WireGuard
+(`wireguard-go` + gVisor netstack, no kernel module, no root) carries HTTP between a server and an
+agent in one Go test. Verdict recorded in the change file. If the spike fails, work stops for an
+architect decision on the §3 fallback (HTTPS push with a per-host bearer token); the contracts
+below (enroll → host identity → `POST /api/ingest`) stay the same, only the identity mechanism
+changes. Real-NAT reliability cannot be proven locally and is verified on a VPS (Stage 7).
+
+**Tunnel.** The server owns a WireGuard device (UDP `SMOTRYASHCHIY_WG_PORT`, default `51820`)
+inside the process, address `.1` of `SMOTRYASHCHIY_TUNNEL_CIDR` (default `10.99.0.0/16`). Its private
+key is generated once and stored in the `settings` table; the public key is shown by enrollment. Peers
+are added at runtime on enrollment and re-added from storage at start-up. Each peer's `AllowedIPs`
+is exactly its own `/32`.
+
+**Enrollment.**
+- `admin host create --name N` (stdin-free, prints once): creates the host and a one-time
+  enrollment secret (32 random bytes, base64url; only its SHA-256 is stored; valid 1 h, single
+  use) and prints the agent command `smotryashchiy agent enroll --server URL --secret S`.
+- `POST /api/enroll` (public, per-IP rate limited; body `{secret, public_key}`) atomically consumes
+  the secret, assigns the next free tunnel address, adds the peer and returns
+  `{host_id, tunnel_ip, server_public_key, server_endpoint, server_tunnel_ip}`. Wrong, expired or
+  used secrets all answer the same `401`. A public key already enrolled answers `409`.
+- The agent generates its own keypair (private key never leaves the host, stored `0600`).
+- Tables: `host_enrollments (host_id, secret_hash, expires_at, used_at)`,
+  `host_peers (host_id PK, public_key UNIQUE, tunnel_ip UNIQUE, enrolled_at)`.
+
+**Ingest.** `POST /api/ingest` is served **only on the tunnel listener** (`server_tunnel_ip:8443`,
+plain HTTP; encryption and peer identity come from WireGuard), never on the public address. Headers:
+`Idempotency-Key`; body is the §4.1 batch. The host is derived from the connection's source tunnel
+address via `host_peers`, never from a client-supplied ID. Responses: `200`
+`{accepted:{metrics,checks,events}, duplicates:{…}, replayed}`, `400` field-addressed validation
+error, `413` body over 1 MiB, `429` when a host exceeds 10 batches/s. It calls the same
+`Service.Ingest` as tests and publishes accepted records to the live stream (§4.6).
+
+**Agent (this change).** Only `agent enroll` (keypair, enrollment call, writes
+`agent.json` config `0600`) and a `agent push-file FILE` helper that sends a §4.1 batch through the
+tunnel; collectors and the run loop are Change 05.
+
 ## 4a. Other interfaces
 
 `/healthz` and `/health/ready` (exact release) exist since Change 01; UI/admin APIs are specified
@@ -170,7 +209,7 @@ in the change that introduces them.
 
 Reuses the predecessor's visual authority: `docs/reference/PRODUCT.md`, `docs/reference/DESIGN.md`
 and `docs/reference/ui-references/` (dark, compact, mono-first terminal vocabulary; status never
-color-only; WCAG 2.2 AA). Pages: Dashboard, Hosts, Host detail, Uptime, Alerts/Notifications, Login.
+color-only; WCAG 2.2 AA). Pages: Dashboard, Hosts, Host detail, Uptime, Login. (Alerts/Notifications is deferred with alerting, see §7.)
 
 ## 6. Non-Functional
 
@@ -186,15 +225,15 @@ within a few seconds. Agent footprint: small enough to run on the smallest VPS.
 | 1 | Data core: contract, ingest, storage, retention/rollup, WS |
 | 2 | Agent v1: host metrics, WireGuard transport (spike first), enrollment |
 | 3 | UI v1: Dashboard, Hosts, Host detail (embedded SPA) |
-| 4 | Uptime prober, alert rules, Telegram |
+| 4 | Uptime prober. **Alert rules, alert lifecycle and Telegram are deferred** (architect decision 2026-09-21); revisit after the MVP is dogfooded |
 | 5 | Docker, logs, fail2ban in the agent |
 | 6 | Distribution: image/binary, ACME, backup, deploy workflow, runbook |
 | 7 | Dogfood on a fresh VPS for infraegev2; derive v2 backlog (incl. analytics) |
 
 ## 8. Open Questions
 
-- Stage-2 spike: confirm userspace WireGuard (netstack) is reliable across common VPS/NAT setups;
-  otherwise fall back to HTTPS push.
+- Stage-2 spike: local proof is Change 04's first item; reliability across common VPS/NAT setups is
+  confirmed at Stage 7, otherwise fall back to HTTPS push.
 - Frontend stack for the embedded SPA (predecessor used React + Base UI + uPlot + Vite): confirm in
   the UI change.
 - Supported agent platforms: Linux amd64/arm64 for MVP (assumption).

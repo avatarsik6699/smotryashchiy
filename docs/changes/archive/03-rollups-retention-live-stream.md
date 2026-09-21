@@ -9,7 +9,7 @@
 | Change | `03` |
 | Slug | `rollups-retention-live-stream` |
 | Title | Rollups, Retention and Live Stream |
-| Status | `active` |
+| Status | `archived` |
 | Branch | `feature/03-rollups-retention-live-stream` |
 
 ---

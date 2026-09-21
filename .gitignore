@@ -11,10 +11,7 @@
 *.key
 secrets*.json
 
-# Frontend
-web/node_modules/
-web/dist/
-
+# Frontend (built UI: see the web/dist rules below)
 # Local agent state
 .claude/settings.local.json
 

@@ -109,6 +109,15 @@ Carry these into the first contract tests instead of rediscovering them in produ
   (`/mnt/c/Users/user/AppData/Local/Temp/.playwright-mcp` from WSL). Playwriter, driven from WSL,
   accepts WSL absolute paths.
 
+### A directory ignore rule beats a later `!` exception
+
+- **Symptoms**: `web/dist/.gitkeep` was not tracked although `.gitignore` had `!web/dist/.gitkeep`; a fresh
+  clone failed `go build` (`go:embed all:dist` matches nothing).
+- **Root cause**: an earlier `web/dist/` line ignored the whole directory, and git cannot re-include a file
+  whose parent directory is ignored.
+- **Fix**: ignore the contents (`web/dist/*`) and add `!web/dist/.gitkeep`. Always verify with
+  `git clone . /tmp/x && cd /tmp/x && go build ./...` after touching embed inputs.
+
 ### Docker-owned files break host operations (`EACCES` / `EPERM` / read-only)
 
 - **Symptoms**: file operations fail with `EACCES`, `EPERM`, "Permission denied" or

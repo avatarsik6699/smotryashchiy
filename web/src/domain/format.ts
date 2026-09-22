@@ -77,3 +77,10 @@ export function formatLatency(ms: number): string {
   if (!Number.isFinite(ms) || ms < 0) return UNKNOWN
   return ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)} s`
 }
+
+/** "key=value, key2=value2" for a non-empty Check.meta object; "" when empty/absent (docs/SPEC.md §5). */
+export function formatMeta(meta: unknown): string {
+  if (typeof meta !== 'object' || meta === null || Array.isArray(meta)) return ''
+  const entries = Object.entries(meta as Record<string, unknown>)
+  return entries.map(([k, v]) => `${k}=${String(v)}`).join(', ')
+}

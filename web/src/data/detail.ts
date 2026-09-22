@@ -76,7 +76,11 @@ export function buildDetailSeries(raw: MetricDTO[], record: HostRecord, nowMs: n
     load15: rawPoints(raw, record, 'load.avg_15m'),
     rx: sumSeries([...rx.values()]),
     tx: sumSeries([...tx.values()]),
-    interfaces: names.map((name) => ({ name, rx: latest(rx, name), tx: latest(tx, name) })),
+    interfaces: names.map((name) => ({
+      name,
+      rx: latest(rx, name),
+      tx: latest(tx, name),
+    })),
   }
 }
 
@@ -95,7 +99,13 @@ export function diskInfos(record: HostRecord, nowMs: number): DiskInfo[] {
     if (!['disk.used_percent', 'disk.used_bytes', 'disk.total_bytes'].includes(s.name)) continue
     const mount = s.labels.mount
     if (mount === undefined) continue
-    const info = byMount.get(mount) ?? { mount, device: s.labels.device ?? '', usedPercent: null, usedBytes: null, totalBytes: null }
+    const info = byMount.get(mount) ?? {
+      mount,
+      device: s.labels.device ?? '',
+      usedPercent: null,
+      usedBytes: null,
+      totalBytes: null,
+    }
     const p = s.points.at(-1)
     const v = p && isFresh(p.t, nowMs) ? p.v : null
     if (s.name === 'disk.used_percent') info.usedPercent = v
@@ -104,6 +114,42 @@ export function diskInfos(record: HostRecord, nowMs: number): DiskInfo[] {
     byMount.set(mount, info)
   }
   return [...byMount.values()].sort((a, b) => a.mount.localeCompare(b.mount))
+}
+
+export interface ContainerInfo {
+  name: string
+  image: string
+  cpuPercent: number | null
+  memUsedBytes: number | null
+  memUsedPercent: number | null
+}
+
+/**
+ * Latest known state of every Docker container reporting `docker.container.*` metrics
+ * (docs/SPEC.md §4h, §5). A host with no such metrics returns an empty list — the block is
+ * omitted entirely rather than shown empty (Docker is optional, unlike disks).
+ */
+export function containerInfos(record: HostRecord, nowMs: number): ContainerInfo[] {
+  const byName = new Map<string, ContainerInfo>()
+  for (const s of record.series.values()) {
+    if (!s.name.startsWith('docker.container.')) continue
+    const name = s.labels.container
+    if (name === undefined) continue
+    const info = byName.get(name) ?? {
+      name,
+      image: s.labels.image ?? '',
+      cpuPercent: null,
+      memUsedBytes: null,
+      memUsedPercent: null,
+    }
+    const p = s.points.at(-1)
+    const v = p && isFresh(p.t, nowMs) ? p.v : null
+    if (s.name === 'docker.container.cpu_percent') info.cpuPercent = v
+    else if (s.name === 'docker.container.memory_used_bytes') info.memUsedBytes = v
+    else if (s.name === 'docker.container.memory_used_percent') info.memUsedPercent = v
+    byName.set(name, info)
+  }
+  return [...byName.values()].sort((a, b) => (b.cpuPercent ?? -1) - (a.cpuPercent ?? -1) || a.name.localeCompare(b.name))
 }
 
 /** Event list for one host: fetched ones plus newer live ones from the global stream, newest first, deduplicated. */

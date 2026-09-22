@@ -1,10 +1,11 @@
 import { Meter } from '@base-ui/react/meter'
 import { useMemo } from 'react'
-import { buildDetailSeries, diskInfos, mergeHostEvents } from '../../data/detail'
+import { buildDetailSeries, containerInfos, diskInfos, mergeHostEvents } from '../../data/detail'
 import { useDashboard } from '../../data/DashboardContext'
+import { eventSource } from '../../data/events'
 import type { HostRecord } from '../../data/model'
 import { useHostDetail } from '../../data/useHostDetail'
-import { formatAge, formatBytes, formatClock, formatPercent, formatRate, UNKNOWN } from '../../domain/format'
+import { formatAge, formatBytes, formatClock, formatMeta, formatPercent, formatRate, UNKNOWN } from '../../domain/format'
 import { Chart } from '../Chart/Chart'
 import styles from './HostDetails.module.css'
 
@@ -18,6 +19,7 @@ export function HostDetails({ record, now }: { record: HostRecord; now: number }
   const { events: liveEvents } = useDashboard()
   const series = useMemo(() => buildDetailSeries(detail.raw, record, now), [detail.raw, record, now])
   const disks = useMemo(() => diskInfos(record, now), [record, now])
+  const containers = useMemo(() => containerInfos(record, now), [record, now])
   // Busy interfaces first; container hosts can have dozens of idle veth devices.
   const interfaces = useMemo(() => [...series.interfaces].sort((a, b) => (b.rx ?? 0) + (b.tx ?? 0) - ((a.rx ?? 0) + (a.tx ?? 0)) || a.name.localeCompare(b.name)), [series.interfaces])
   const events = useMemo(() => mergeHostEvents(detail.events, liveEvents, record.host.id), [detail.events, liveEvents, record.host.id])
@@ -39,7 +41,10 @@ export function HostDetails({ record, now }: { record: HostRecord; now: number }
       <div className={styles.charts}>
         <Chart series={[{ label: 'CPU', points: series.cpu }]} variant="full" height={CHART_HEIGHT} kind="percent" format={formatPercent} name="CPU usage, last hour" />
         <Chart
-          series={[{ label: 'memory', points: series.memory }, { label: 'swap', points: series.swap }]}
+          series={[
+            { label: 'memory', points: series.memory },
+            { label: 'swap', points: series.swap },
+          ]}
           variant="full"
           height={CHART_HEIGHT}
           kind="percent"
@@ -47,7 +52,11 @@ export function HostDetails({ record, now }: { record: HostRecord; now: number }
           name="Memory and swap usage, last hour"
         />
         <Chart
-          series={[{ label: 'load 1m', points: series.load1 }, { label: 'load 5m', points: series.load5 }, { label: 'load 15m', points: series.load15 }]}
+          series={[
+            { label: 'load 1m', points: series.load1 },
+            { label: 'load 5m', points: series.load5 },
+            { label: 'load 15m', points: series.load15 },
+          ]}
           variant="full"
           height={CHART_HEIGHT}
           kind="auto"
@@ -55,7 +64,10 @@ export function HostDetails({ record, now }: { record: HostRecord; now: number }
           name="Load average, last hour"
         />
         <Chart
-          series={[{ label: 'rx', points: series.rx }, { label: 'tx', points: series.tx }]}
+          series={[
+            { label: 'rx', points: series.rx },
+            { label: 'tx', points: series.tx },
+          ]}
           variant="full"
           height={CHART_HEIGHT}
           kind="auto"
@@ -88,16 +100,34 @@ export function HostDetails({ record, now }: { record: HostRecord; now: number }
                   )}
                   <span className={styles.diskText}>
                     {d.usedPercent === null ? UNKNOWN : formatPercent(d.usedPercent)}
-                    <span className={styles.muted}>
-                      {' '}
-                      {d.usedBytes === null || d.totalBytes === null ? '' : `${formatBytes(d.usedBytes)} / ${formatBytes(d.totalBytes)}`}
-                    </span>
+                    <span className={styles.muted}> {d.usedBytes === null || d.totalBytes === null ? '' : `${formatBytes(d.usedBytes)} / ${formatBytes(d.totalBytes)}`}</span>
                   </span>
                 </li>
               ))}
             </ul>
           )}
         </section>
+
+        {containers.length > 0 && (
+          <section className={styles.block} aria-label="Containers">
+            <h3 className={styles.blockTitle}>Containers</h3>
+            <ul className={styles.list}>
+              {containers.map((c) => (
+                <li key={c.name} className={styles.container}>
+                  <span className={styles.containerName}>
+                    {c.name}
+                    <span className={styles.muted}> {c.image}</span>
+                  </span>
+                  <span className={styles.containerText}>{c.cpuPercent === null ? UNKNOWN : formatPercent(c.cpuPercent)}</span>
+                  <span className={styles.containerText}>
+                    {c.memUsedPercent === null ? UNKNOWN : formatPercent(c.memUsedPercent)}
+                    <span className={styles.muted}> {c.memUsedBytes === null ? '' : formatBytes(c.memUsedBytes)}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
 
         <section className={styles.block} aria-label="Network interfaces">
           <h3 className={styles.blockTitle}>Interfaces</h3>
@@ -124,14 +154,18 @@ export function HostDetails({ record, now }: { record: HostRecord; now: number }
             <p className={styles.muted}>no checks reported</p>
           ) : (
             <ul className={styles.list}>
-              {record.checks.map((c) => (
-                <li key={c.name} className={styles.row}>
-                  <span>{c.name}</span>
-                  <span className={styles.check} data-status={c.status}>
-                    {c.status.toUpperCase()} <span className={styles.muted}>{formatAge(now - Date.parse(c.ts))}</span>
-                  </span>
-                </li>
-              ))}
+              {record.checks.map((c) => {
+                const meta = formatMeta(c.meta)
+                return (
+                  <li key={c.name} className={styles.row}>
+                    <span>{c.name}</span>
+                    <span className={styles.check} data-status={c.status}>
+                      {c.status.toUpperCase()} <span className={styles.muted}>{formatAge(now - Date.parse(c.ts))}</span>
+                      {meta && <span className={styles.muted}> · {meta}</span>}
+                    </span>
+                  </li>
+                )
+              })}
             </ul>
           )}
         </section>
@@ -142,15 +176,21 @@ export function HostDetails({ record, now }: { record: HostRecord; now: number }
             <p className={styles.muted}>no events</p>
           ) : (
             <ul className={styles.list}>
-              {events.map((e) => (
-                <li key={`${e.ts}|${e.level}|${e.message}`} className={styles.event}>
-                  <span className={styles.muted}>{formatClock(Date.parse(e.ts))}</span>
-                  <span className={styles.level} data-level={e.level}>
-                    {e.level.toUpperCase()}
-                  </span>
-                  <span className={styles.message}>{e.message}</span>
-                </li>
-              ))}
+              {events.map((e) => {
+                const source = eventSource(e.labels)
+                return (
+                  <li key={`${e.ts}|${e.level}|${e.message}`} className={styles.event}>
+                    <span className={styles.muted}>{formatClock(Date.parse(e.ts))}</span>
+                    <span className={styles.level} data-level={e.level}>
+                      {e.level.toUpperCase()}
+                    </span>
+                    <span className={styles.message}>
+                      {source && <span className={styles.muted}>[{source}] </span>}
+                      {e.message}
+                    </span>
+                  </li>
+                )
+              })}
             </ul>
           )}
         </section>

@@ -7,7 +7,7 @@
 
 | Field | Value |
 |-------|-------|
-| Document Version | `v1.11` |
+| Document Version | `v1.12` |
 | Date | `2026-09-22` |
 | Architect / Owner | `avatarsik666@gmail.com` |
 | Stack | See [docs/STACK.md](./STACK.md) |
@@ -400,8 +400,28 @@ Layout, top to bottom: command bar (`$ smotryashchiy`, live-connection text, `+ 
 A host row shows name, freshness state, four sparklines with current values (CPU, memory, disk, network)
 and last-seen age; activating it expands the row in place (one open at a time) to large charts, disks per
 mount, network per interface, load, swap, checks and that host's events. The window is fixed at 1 hour;
-there are no filters, tabs or theme switch. Login is not a page: the login form replaces the dashboard
+there are no tabs or theme switch. Login is not a page: the login form replaces the dashboard
 whenever an API call answers `401`.
+
+**EVENTS filtering (Change 12, architect decision 2026-09-22, supersedes the original "no filters"
+rule):** the original single-page design had no filters by intent, but Change 11's journald/Docker-log/
+fail2ban collectors made the unfiltered stream too broad to scan on a busy host (e.g. routine health-check
+polling alone produces several lines per cycle). EVENTS gains exactly one filter — by source label
+(`unit`, `container` or `jail`, whichever the event carries; unlabeled events remain visible when
+unfiltered) — applied client-side against the already-loaded window, no new query parameter or backend
+change. This stays the only filter the UI offers; it does not reopen the door to tabs, a theme switch, or
+filters on other sections (HOSTS, UPTIME). Each event row also gains a visible source label (text,
+same source as the filter draws from) — today only host/level/time/message are shown, so there is
+currently no way to tell which source an event came from without reading the message body.
+
+**CONTAINERS panel and generic Check metadata (Change 12):** the expanded host row gains a
+**CONTAINERS** block (same list style as DISKS/INTERFACES) grouping `docker.container.*` metrics
+by the `container` label: name, image, current CPU%, current memory (used/percent) per container,
+sorted busiest-first like INTERFACES already is; a host with no `docker.container.*` metrics omits
+the block entirely (same "no data" convention as an unreachable Docker socket, §4h). The CHECKS
+block stays generic — it must not special-case fail2ban — but gains one addition that helps any
+current or future check type: when a check's `meta` is non-empty, its key/value pairs render inline
+next to the status (e.g. `currently_banned=5`), same muted-text treatment as an interface's rx/tx.
 
 Rules: host state is derived from freshness only (`OK` ≤ 45 s since `last_seen_at`, `STALE` ≤ 5 min,
 `OFFLINE` beyond, `NEW` when never seen) and is always textual; missing data renders `—`, never `0`;
@@ -462,10 +482,8 @@ both real providers, real Let's Encrypt certificate, real fail2ban/Docker/journa
 these candidates for the next planning round — none are committed yet, all need an architect brief
 before a `/plan`:
 
-- **Dashboard surfacing for Change 11's signals.** Docker container metrics, log events and
-  fail2ban checks already flow through the existing generic Checks/Events UI (confirmed in a real
-  browser — no code change was needed), but there's no dedicated view (e.g. per-container list,
-  log filter/search, a jail-status summary widget). Worth a UI-focused change once there's appetite.
+- ~~**Dashboard surfacing for Change 11's signals.**~~ In progress as Change 12 (§5's CONTAINERS
+  panel, generic Check-meta display, EVENTS source labels + filter).
 - **Event volume from health-check polling.** The container's own `/health/ready` polling produces
   ~4 near-duplicate event lines per cycle (journald + Docker-log tail both capture it, doubled
   again by request-start/request-complete logging). Not wrong, but noisy in the live Events list;

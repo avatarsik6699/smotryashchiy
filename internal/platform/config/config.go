@@ -143,6 +143,10 @@ func Load(defaultRelease string) (Config, error) {
 	return cfg, nil
 }
 
+// ListenAddr is the server's listen address without the rest of the configuration (healthcheck only
+// needs this and must not fail on unrelated production settings).
+func ListenAddr() string { return getOr(envAddr, ":8080") }
+
 func getOr(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v

@@ -1,0 +1,14 @@
+# Keep the build context small and free of secrets and local state.
+.git
+.github
+.claude
+docs
+release
+data
+*.db
+*.db-*
+.env
+web/node_modules
+web/dist
+**/node_modules
+**/*.test

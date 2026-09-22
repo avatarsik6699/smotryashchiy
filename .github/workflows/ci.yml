@@ -74,3 +74,20 @@ jobs:
 
       - name: Vulnerability audit
         run: bash scripts/vuln-gate.sh
+
+  image:
+    name: Image (build, smoke, scan)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Image smoke test
+        run: bash scripts/image-smoke.sh smotryashchiy:smoke
+
+      - name: Image vulnerability scan
+        run: bash scripts/image-scan.sh smotryashchiy:smoke

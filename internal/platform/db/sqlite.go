@@ -17,6 +17,28 @@ import (
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
 
+// MigrationCount is the number of migrations embedded in this binary.
+func MigrationCount() int {
+	entries, _ := fs.Glob(migrationsFS, "migrations/*.sql")
+	return len(entries)
+}
+
+// AppliedMigrations is the number of migrations recorded in an open database (0 for a fresh one).
+func AppliedMigrations(sqlDB *sql.DB) (int, error) {
+	var exists int
+	if err := sqlDB.QueryRow(`SELECT COUNT(1) FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'`).Scan(&exists); err != nil {
+		return 0, fmt.Errorf("db: inspect schema: %w", err)
+	}
+	if exists == 0 {
+		return 0, nil
+	}
+	var n int
+	if err := sqlDB.QueryRow(`SELECT COUNT(1) FROM schema_migrations`).Scan(&n); err != nil {
+		return 0, fmt.Errorf("db: count migrations: %w", err)
+	}
+	return n, nil
+}
+
 // Open opens (creating if needed) the SQLite database at path with pragmas suited to a
 // single-writer embedded app. Callers should call Migrate next.
 func Open(path string) (*sql.DB, error) {

@@ -10,7 +10,7 @@ import (
 // release is the build-time release SHA, set with -ldflags "-X main.release=<sha>".
 var release = "development"
 
-const usage = "usage: smotryashchiy server | agent enroll|push-file | admin set-password|host create"
+const usage = "usage: smotryashchiy server | agent enroll|run|push-file | admin set-password|host create|backup|restore | healthcheck | version"
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
@@ -29,6 +29,10 @@ func run(args []string, stdin *os.File, stdout, stderr *os.File) int {
 		err = runAgent(args[1:], stdout)
 	case "admin":
 		err = runAdmin(args[1:], stdin, stdout)
+	case "version":
+		err = runVersion(stdout)
+	case "healthcheck":
+		err = runHealthcheck(stdout)
 	default:
 		fmt.Fprintln(stderr, usage)
 		return 2

@@ -19,3 +19,6 @@ secrets*.json
 web/dist/*
 !web/dist/.gitkeep
 web/node_modules/
+
+# Release artifacts built by scripts/build-release.sh
+release/

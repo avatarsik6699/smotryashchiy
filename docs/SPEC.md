@@ -7,7 +7,7 @@
 
 | Field | Value |
 |-------|-------|
-| Document Version | `v1.7` |
+| Document Version | `v1.8` |
 | Date | `2026-09-21` |
 | Architect / Owner | `avatarsik666@gmail.com` |
 | Stack | See [docs/STACK.md](./STACK.md) |
@@ -44,7 +44,7 @@ looks healthy; observe only.
 | Built-in uptime checks: HTTP, TCP, TLS expiry | Multi-user / RBAC / audit log |
 | Log/event collection: journald, Docker logs | Second notification channel |
 | Security signals: fail2ban bans and jail status | Distributed / high-cardinality storage |
-| ~~Alert rules, firing → resolved lifecycle, Telegram~~ *(deferred, see §7)* | Off-host backup (later) |
+| ~~Alert rules, firing → resolved lifecycle, Telegram~~ *(deferred, see §7)* | Off-host backup (later; local snapshot bundle in §4f) |
 | Embedded static web UI, single admin password | Escalation / repeat notifications |
 
 ---
@@ -287,6 +287,33 @@ The server probes operator-defined **targets** itself; nothing runs on the monit
   created_at,last,latency}]}` where `last` is the newest result or `null` and `latency` is
   `[[ts_ms, latency_ms|null], …]` for the last hour; `POST /api/uptime` → `201` target (`400` invalid,
   `409` duplicate name or limit reached); `DELETE /api/uptime/{id}` → `204`, results are deleted with it.
+
+## 4f. Packaging, release and backup (Change 09)
+
+- **Binary.** One static executable (`CGO_ENABLED=0`, `-trimpath`, stripped) for `linux/amd64` and
+  `linux/arm64`, with the SPA embedded (the UI is built before `go build`) and the release SHA stamped by
+  `-ldflags "-X main.release=<sha>"`. `smotryashchiy version` prints the release and the number of embedded
+  migrations. A `SHA256SUMS` file accompanies the binaries.
+- **Image.** Multi-stage build (node → go → `gcr.io/distroless/static-debian12:nonroot`): no shell, CA
+  roots included (the prober needs them), user `65532`, works with a read-only root filesystem, writes only
+  under `/data` (`SMOTRYASHCHIY_DB_PATH=/data/smotryashchiy.db`). Exposes `8080/tcp` and `51820/udp`. The image
+  `HEALTHCHECK` runs `smotryashchiy healthcheck`, which requests `GET /health/ready` on the configured
+  listen address (loopback for wildcard addresses) with a 3 s timeout and exits `0` only on `200`.
+- **Compose example** `deploy/docker-compose.yml`: the server with a named volume, the two ports, a
+  read-only rootfs and the production environment (§ STACK env table). Until Change 10 adds ACME, production
+  mode expects a TLS-terminating reverse proxy (`SECURE_COOKIES`, `TRUSTED_PROXY_CIDRS`).
+- **Backup.** `smotryashchiy admin backup --out FILE|-` writes a consistent snapshot of a **running** server's
+  database (SQLite `VACUUM INTO`, no downtime) as a `.tar.gz` holding `smotryashchiy.db` and
+  `manifest.json` (`created_at`, `release`, `migrations`, `db_sha256`). The bundle contains secrets (the
+  admin password hash and the WireGuard server key): it is created with mode `0600` and never overwrites an
+  existing file; `--out -` streams the bundle to stdout (refused on a terminal) and `--from -` reads it from
+  stdin, so a bundle never has to cross a container/host file-permission boundary. `smotryashchiy admin
+  restore --from FILE|- [--force]` verifies the manifest hash, that
+  `PRAGMA integrity_check` is `ok` and that the bundle's migration count is not newer than the binary's, then
+  atomically replaces the database. It refuses to touch an existing non-empty database without `--force`, and
+  refuses while the database is locked by a running server. Off-host copying stays the operator's job.
+- **Release Gate** (STACK.md): image builds, runs as non-root, becomes `healthy`, serves `/`, keeps its data
+  across a container restart, and passes a vulnerability scan with no fixable HIGH/CRITICAL findings.
 
 ## 4a. Other interfaces
 

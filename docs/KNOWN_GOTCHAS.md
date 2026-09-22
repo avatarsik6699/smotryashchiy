@@ -168,6 +168,26 @@ Carry these into the first contract tests instead of rediscovering them in produ
 - **Why it is fine**: the box has `overflow: hidden`, so nothing is visible outside it; the ResizeObserver callback
   calls `setSize` synchronously to keep the window this short. Layout checks must sample ≥ 200 ms after a resize.
 
+### A 0600 bundle cannot cross the host/container boundary as a file
+
+- **Symptoms**: `docker cp`/bind-mounting a backup makes it unreadable for uid 65532 (or for you), because the
+  bundle is `0600` and owned by whoever created it.
+- **Fix**: stream it. `admin backup --out -` writes to stdout and `admin restore --from -` reads stdin (both refuse
+  to touch a terminal / need explicit `--force`), so no file permissions are involved. Redirect with `umask 077`.
+
+### The distroless image has no shell: use the binary itself
+
+- `docker exec <c> /smotryashchiy <command>` works (`version`, `healthcheck`, `admin backup ...`); `docker exec <c> sh`
+  does not. Work directories for backups live next to the database (`/data`) because the root filesystem is read-only.
+- `docker top <c> -eo user,pid` needs the `pid` column; `-eo user` alone fails with "Couldn't find PID field".
+- Production mode without an admin password refuses to start; create the container (`docker create`), run
+  `admin set-password` in the same volume, then start it.
+
+### Loopback ports and `docker run -p`
+
+- A UDP port mapped for the tunnel (`-p 51820:51820/udp`) must be free on the host; an agent enrolled against a
+  dev-mode server dials `127.0.0.1:<udp port>`, so test agents only work when host and container ports match.
+
 ### Docker-owned files break host operations (`EACCES` / `EPERM` / read-only)
 
 - **Symptoms**: file operations fail with `EACCES`, `EPERM`, "Permission denied" or

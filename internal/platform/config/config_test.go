@@ -12,7 +12,7 @@ const sha = "0123456789abcdef0123456789abcdef01234567"
 
 func clearEnv(t *testing.T) {
 	t.Helper()
-	for _, k := range []string{envAddr, envDBPath, envProduction, envRelease, envSecure, envProxies, envRawDays, envRollupDays, envWGPort, envTunnelCIDR, envEndpoint, envPublicURL} {
+	for _, k := range []string{envAddr, envDBPath, envProduction, envRelease, envSecure, envProxies, envRawDays, envRollupDays, envWGPort, envTunnelCIDR, envEndpoint, envPublicURL, envTLSDomain, envHTTPSAddr, envACMEHTTP, envACMEEmail, envACMECA} {
 		t.Setenv(k, "")
 	}
 }
@@ -50,8 +50,10 @@ func TestLoadProductionContract(t *testing.T) {
 		{"development release", map[string]string{envProxies: "10.0.0.2/32", envEndpoint: ep, envPublicURL: pubURL}, "development", envRelease},
 		{"short sha", map[string]string{envProxies: "10.0.0.2/32", envEndpoint: ep, envPublicURL: pubURL}, "abc123", envRelease},
 		{"insecure cookies", map[string]string{envProxies: "10.0.0.2/32", envEndpoint: ep, envPublicURL: pubURL, envSecure: "false"}, sha, envSecure},
-		{"no proxies", map[string]string{envEndpoint: ep, envPublicURL: pubURL}, sha, envProxies},
+		{"no proxies and no TLS domain", map[string]string{envEndpoint: ep, envPublicURL: pubURL}, sha, envProxies},
 		{"bad cidr", map[string]string{envProxies: "nope", envEndpoint: ep, envPublicURL: pubURL}, sha, "invalid CIDR"},
+		{"TLS domain substitutes for a reverse proxy", map[string]string{envEndpoint: ep, envTLSDomain: "monitor.example.com"}, sha, ""},
+		{"bad ACME CA", map[string]string{envProxies: "10.0.0.2/32", envEndpoint: ep, envPublicURL: pubURL, envACMECA: "bogus"}, sha, envACMECA},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -156,5 +158,38 @@ func TestLoadPublicURL(t *testing.T) {
 		if _, err := Load("development"); err == nil || !strings.Contains(err.Error(), envPublicURL) {
 			t.Fatalf("%q: err = %v, want error naming %s", bad, err, envPublicURL)
 		}
+	}
+}
+
+func TestLoadACME(t *testing.T) {
+	clearEnv(t)
+	cfg, err := Load("development")
+	if err != nil || cfg.TLSDomain != "" || cfg.HTTPSAddr != ":8443" || cfg.ACMEHTTPAddr != ":8080" || cfg.ACMEStaging {
+		t.Fatalf("defaults = %+v, err = %v", cfg, err)
+	}
+
+	clearEnv(t)
+	t.Setenv(envTLSDomain, "monitor.example.com")
+	cfg, err = Load("development")
+	if err != nil || cfg.TLSDomain != "monitor.example.com" || cfg.PublicURL != "https://monitor.example.com" {
+		t.Fatalf("TLS domain sets a default public URL: %+v, err = %v", cfg, err)
+	}
+
+	clearEnv(t)
+	t.Setenv(envTLSDomain, "monitor.example.com")
+	t.Setenv(envPublicURL, "https://other.example.com")
+	cfg, err = Load("development")
+	if err != nil || cfg.PublicURL != "https://other.example.com" {
+		t.Fatalf("an explicit public URL must not be overridden: %+v, err = %v", cfg, err)
+	}
+
+	clearEnv(t)
+	t.Setenv(envHTTPSAddr, ":9443")
+	t.Setenv(envACMEHTTP, ":9080")
+	t.Setenv(envACMEEmail, "ops@example.com")
+	t.Setenv(envACMECA, "staging")
+	cfg, err = Load("development")
+	if err != nil || cfg.HTTPSAddr != ":9443" || cfg.ACMEHTTPAddr != ":9080" || cfg.ACMEEmail != "ops@example.com" || !cfg.ACMEStaging {
+		t.Fatalf("overrides = %+v, err = %v", cfg, err)
 	}
 }

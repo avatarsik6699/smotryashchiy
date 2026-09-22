@@ -4,6 +4,7 @@ package httpserver
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"net/http"
 	"time"
@@ -17,7 +18,7 @@ type Server struct {
 	middleware []func(http.Handler) http.Handler
 }
 
-// New creates a Server listening on addr. Routes are mounted on Mux before Serve.
+// New creates a Server listening on addr. Routes are mounted on Mux before Serve/ServeTLS.
 func New(addr string) *Server {
 	return &Server{Mux: http.NewServeMux(), addr: addr}
 }
@@ -28,18 +29,42 @@ func (s *Server) Use(mw func(http.Handler) http.Handler) {
 	s.middleware = append(s.middleware, mw)
 }
 
-// Serve blocks serving HTTP until Shutdown is called (returns nil) or a fatal error occurs.
-func (s *Server) Serve() error {
+func (s *Server) chained() http.Handler {
 	var handler http.Handler = s.Mux
 	for i := len(s.middleware) - 1; i >= 0; i-- {
 		handler = s.middleware[i](handler)
 	}
+	return Chain(handler)
+}
+
+// Serve blocks serving plain HTTP until Shutdown is called (returns nil) or a fatal error occurs.
+// This is the Change 09 path: a trusted reverse proxy terminates TLS in front of it.
+func (s *Server) Serve() error {
 	s.httpServer = &http.Server{
 		Addr:              s.addr,
-		Handler:           Chain(handler),
+		Handler:           s.chained(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	if err := s.httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	return nil
+}
+
+// ServeHTTPS blocks serving the app over TLS on addr (with tlsConfig, typically certmagic's) until
+// Shutdown is called (returns nil) or a fatal error occurs. This is the Change 10 built-in-ACME
+// path (docs/SPEC.md §4g): callers must obtain tlsConfig — and keep the separate ACME HTTP-01
+// listener running throughout, both before and after this call — themselves; see
+// cmd/smotryashchiy/acme.go. It ignores the addr given to New.
+func (s *Server) ServeHTTPS(addr string, tlsConfig *tls.Config) error {
+	s.httpServer = &http.Server{
+		Addr:              addr,
+		Handler:           s.chained(),
+		TLSConfig:         tlsConfig,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+	// The cert/key args are empty: certificates come from tlsConfig.GetCertificate (certmagic).
+	if err := s.httpServer.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
 	return nil

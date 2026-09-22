@@ -1,8 +1,8 @@
 # Deploying smotryashchiy
 
-This is the first deployment guide (Change 09). Built-in TLS (ACME), the release workflow and the
-complete operations runbook arrive with Change 10; until then the server expects a TLS-terminating
-reverse proxy in front of it.
+This is the quick start: get one server running behind a reverse proxy you already run. For built-in
+TLS (no separate proxy), a backup schedule, routine checks and failure playbooks, see
+[`docs/RUNBOOK.md`](RUNBOOK.md).
 
 ## What you run
 
@@ -11,7 +11,8 @@ monitored host) and `admin` (maintenance). The image is `distroless/static:nonro
 uid `65532`, works with a read-only root filesystem and writes only under `/data`.
 
 Ports: `8080/tcp` (UI and API; put a TLS proxy in front) and `51820/udp` (the WireGuard tunnel agents use;
-it must be reachable from your hosts).
+it must be reachable from your hosts). Prefer the server to terminate HTTPS itself? Use
+`deploy/docker-compose.acme.yml` instead and see `docs/RUNBOOK.md` — no reverse proxy needed then.
 
 ## Quick start with Docker Compose
 

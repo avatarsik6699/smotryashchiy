@@ -37,7 +37,7 @@ func healthURL(listenAddr string) (string, error) {
 // runHealthcheck is the container HEALTHCHECK: exit 0 only when /health/ready answers 200 in time.
 // The image has no shell or curl, so the binary probes itself.
 func runHealthcheck(stdout io.Writer) error {
-	url, err := healthURL(config.ListenAddr())
+	url, err := healthURL(config.HealthProbeAddr())
 	if err != nil {
 		return err
 	}

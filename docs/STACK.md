@@ -39,7 +39,12 @@ printf '%s\n' "$PASSWORD" | go run ./cmd/smotryashchiy admin set-password   # >=
 | `SMOTRYASHCHIY_WG_PORT` | `51820` | UDP port of the in-process WireGuard endpoint |
 | `SMOTRYASHCHIY_TUNNEL_CIDR` | `10.99.0.0/16` | Tunnel subnet (IPv4, /8../24); the server takes its first host address |
 | `SMOTRYASHCHIY_PUBLIC_ENDPOINT` | dev: `127.0.0.1:<udp port>` | Agent-facing `host:port` of the WireGuard UDP port; **required in production** |
-| `SMOTRYASHCHIY_PUBLIC_URL` | derived from the request | `http(s)` base URL agents use to enroll (shown in the UI's enrollment command); **required in production** |
+| `SMOTRYASHCHIY_PUBLIC_URL` | derived from the request, or `https://<TLS_DOMAIN>` | `http(s)` base URL agents use to enroll (shown in the UI's enrollment command); **required in production** unless `TLS_DOMAIN` is set |
+| `SMOTRYASHCHIY_TLS_DOMAIN` | unset (no built-in TLS) | Domain to obtain a certificate for via ACME (docs/SPEC.md §4g); setting it switches the server into self-terminated TLS |
+| `SMOTRYASHCHIY_HTTPS_ADDR` | `:8443` | App's TLS listen address when `TLS_DOMAIN` is set |
+| `SMOTRYASHCHIY_ACME_HTTP_ADDR` | `:8080` | ACME HTTP-01 challenge + redirect listen address when `TLS_DOMAIN` is set |
+| `SMOTRYASHCHIY_ACME_EMAIL` | unset | Optional: the CA sends renewal/expiry notices to it |
+| `SMOTRYASHCHIY_ACME_CA` | `production` | `staging` selects Let's Encrypt's staging CA (untrusted certs, no rate limit) for testing a domain |
 | `RELEASE_SHA` / `SKIP_WEB` / `RELEASE_DIR` | git HEAD / `0` / `release` | (`scripts/build-release.sh` only) release SHA to stamp, skip the UI build, output directory |
 | `SMOKE_PORT` | `18140` | (`scripts/image-smoke.sh` only) host port for the smoke containers |
 | `SMOTRYASHCHIY_DEV_BACKEND` | `http://127.0.0.1:8080` | (`web/`, dev only) Go server the Vite dev proxy forwards `/api` and WebSocket to |
@@ -82,7 +87,7 @@ Other variables (`SMOTRYASHCHIY_ADDR`, `_DB_PATH`, `_PRODUCTION`, `_RELEASE`, `_
 | Release binaries | `bash scripts/build-release.sh` | UI build, static linux/amd64 + arm64, SHA256SUMS; the arm64 binary is verified static but not executed on amd64 hosts |
 | Image smoke | `bash scripts/image-smoke.sh` | builds the image; non-root, read-only rootfs, healthy, UI + CSP, data survives restart, backup/restore, production boot and fail-closed refusal |
 | Image scan | `bash scripts/image-scan.sh` | pinned Trivy; fails on fixable HIGH/CRITICAL |
-| Deploy verification | `n/a` | added with the deploy workflow (Change 10) |
+| Deploy verification | `gh run watch` on the tag push, then check the run's job summary | `.github/workflows/release.yml`: on a `v*` tag it runs the three rows above itself and, only on PASS, pushes the multi-arch image to GHCR and publishes the GitHub Release |
 
 ## Required Tooling
 

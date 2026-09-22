@@ -7,7 +7,7 @@
 
 | Field | Value |
 |-------|-------|
-| Document Version | `v1.8` |
+| Document Version | `v1.9` |
 | Date | `2026-09-21` |
 | Architect / Owner | `avatarsik666@gmail.com` |
 | Stack | See [docs/STACK.md](./STACK.md) |
@@ -300,7 +300,7 @@ The server probes operator-defined **targets** itself; nothing runs on the monit
   `HEALTHCHECK` runs `smotryashchiy healthcheck`, which requests `GET /health/ready` on the configured
   listen address (loopback for wildcard addresses) with a 3 s timeout and exits `0` only on `200`.
 - **Compose example** `deploy/docker-compose.yml`: the server with a named volume, the two ports, a
-  read-only rootfs and the production environment (§ STACK env table). Until Change 10 adds ACME, production
+  read-only rootfs and the production environment (§ STACK env table). Change 10 adds a built-in-ACME compose variant (§4g); until then, or if you prefer it, production
   mode expects a TLS-terminating reverse proxy (`SECURE_COOKIES`, `TRUSTED_PROXY_CIDRS`).
 - **Backup.** `smotryashchiy admin backup --out FILE|-` writes a consistent snapshot of a **running** server's
   database (SQLite `VACUUM INTO`, no downtime) as a `.tar.gz` holding `smotryashchiy.db` and
@@ -314,6 +314,31 @@ The server probes operator-defined **targets** itself; nothing runs on the monit
   refuses while the database is locked by a running server. Off-host copying stays the operator's job.
 - **Release Gate** (STACK.md): image builds, runs as non-root, becomes `healthy`, serves `/`, keeps its data
   across a container restart, and passes a vulnerability scan with no fixable HIGH/CRITICAL findings.
+
+## 4g. Built-in TLS, release automation and the runbook (Change 10)
+
+- **ACME.** Setting `SMOTRYASHCHIY_TLS_DOMAIN` switches the server into self-terminated TLS
+  (`certmagic`, HTTP-01 challenge): it serves the app on `SMOTRYASHCHIY_HTTPS_ADDR` (default `:8443`)
+  and, on `SMOTRYASHCHIY_ACME_HTTP_ADDR` (default `:8080`), the ACME challenge plus a redirect of
+  everything else to `https://`. Certificates are stored under `<DB dir>/acme` (writable next to the
+  database on the read-only image). `SMOTRYASHCHIY_ACME_EMAIL` is optional (renewal notices);
+  `SMOTRYASHCHIY_ACME_CA=staging` selects Let's Encrypt's staging CA (untrusted certs, no rate limit)
+  for testing a new domain before switching back to the default production CA. `/health/ready` is
+  mounted on both listeners (unencrypted on the ACME port too), so `healthcheck` never depends on a
+  certificate being ready yet. No low ports are bound in-process: operators map host `80`→container
+  `8080` and host `443`→container `8443` (`deploy/docker-compose.acme.yml`), so the nonroot user needs
+  no capability. **Production mode** now accepts either this (TLS domain set) or the Change 09 path
+  (a trusted reverse proxy: `SECURE_COOKIES=true` and `TRUSTED_PROXY_CIDRS` set) — never neither.
+- **Release automation.** `.github/workflows/release.yml`, triggered by a `v*` tag: builds the release
+  binaries and `SHA256SUMS` (`scripts/build-release.sh`) and attaches them to a GitHub Release; builds a
+  multi-arch (`amd64`+`arm64`) image, runs `scripts/image-smoke.sh` and `scripts/image-scan.sh` against
+  it, and on PASS pushes `ghcr.io/<owner>/smotryashchiy:<tag>` and `:latest`. A release that fails smoke
+  or scan is not published.
+- **Runbook** (`docs/RUNBOOK.md`): first deploy with built-in ACME, a backup schedule example, routine
+  checks, and playbooks for the failures operators actually hit (certificate not issued, agent can't
+  reach the tunnel, restore refused because the server is still running, disk filling up, a lost admin
+  password), plus upgrade/rollback. `docs/DEPLOY.md` keeps the Change 09 reverse-proxy quick start and
+  now links here for ACME and incidents.
 
 ## 4a. Other interfaces
 

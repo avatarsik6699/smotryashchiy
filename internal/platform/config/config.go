@@ -40,6 +40,18 @@ type Config struct {
 	// PublicURL is the http(s) base URL agents use to enroll and the UI shows in enrollment
 	// commands; empty means "derive it from the request" (docs/SPEC.md §4d).
 	PublicURL string
+	// TLSDomain, when set, switches the server into self-terminated TLS via certmagic: it serves the
+	// app on HTTPSAddr and the ACME HTTP-01 challenge (plus a redirect) on ACMEHTTPAddr
+	// (docs/SPEC.md §4g). Empty means "no built-in TLS" (Change 09's reverse-proxy path).
+	TLSDomain string
+	// HTTPSAddr is the app's TLS listen address when TLSDomain is set.
+	HTTPSAddr string
+	// ACMEHTTPAddr is the ACME HTTP-01 challenge and redirect listen address when TLSDomain is set.
+	ACMEHTTPAddr string
+	// ACMEEmail is optional: the CA sends renewal/expiry notices to it.
+	ACMEEmail string
+	// ACMEStaging selects Let's Encrypt's staging CA (untrusted certs, no rate limit) for testing.
+	ACMEStaging bool
 }
 
 const (
@@ -55,9 +67,16 @@ const (
 	envTunnelCIDR = "SMOTRYASHCHIY_TUNNEL_CIDR"
 	envEndpoint   = "SMOTRYASHCHIY_PUBLIC_ENDPOINT"
 	envPublicURL  = "SMOTRYASHCHIY_PUBLIC_URL"
+	envTLSDomain  = "SMOTRYASHCHIY_TLS_DOMAIN"
+	envHTTPSAddr  = "SMOTRYASHCHIY_HTTPS_ADDR"
+	envACMEHTTP   = "SMOTRYASHCHIY_ACME_HTTP_ADDR"
+	envACMEEmail  = "SMOTRYASHCHIY_ACME_EMAIL"
+	envACMECA     = "SMOTRYASHCHIY_ACME_CA"
 
 	defaultWGPort     = 51820
 	defaultTunnelCIDR = "10.99.0.0/16"
+	defaultHTTPSAddr  = ":8443"
+	defaultACMEHTTP   = ":8080"
 
 	defaultRawRetentionDays    = 30
 	defaultRollupRetentionDays = 396 // 13 months
@@ -108,6 +127,19 @@ func Load(defaultRelease string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	tlsDomain := strings.TrimSpace(os.Getenv(envTLSDomain))
+	acmeCA := strings.TrimSpace(os.Getenv(envACMECA))
+	var acmeStaging bool
+	switch acmeCA {
+	case "", "production":
+	case "staging":
+		acmeStaging = true
+	default:
+		return Config{}, fmt.Errorf("config: %s must be production or staging, got %q", envACMECA, acmeCA)
+	}
+	if publicURL == "" && tlsDomain != "" {
+		publicURL = "https://" + tlsDomain
+	}
 	cfg := Config{
 		Addr:              getOr(envAddr, ":8080"),
 		DBPath:            getOr(envDBPath, "./data/smotryashchiy.db"),
@@ -122,6 +154,12 @@ func Load(defaultRelease string) (Config, error) {
 		TunnelCIDR:          tunnelCIDR,
 		PublicEndpoint:      endpoint,
 		PublicURL:           publicURL,
+
+		TLSDomain:    tlsDomain,
+		HTTPSAddr:    getOr(envHTTPSAddr, defaultHTTPSAddr),
+		ACMEHTTPAddr: getOr(envACMEHTTP, defaultACMEHTTP),
+		ACMEEmail:    strings.TrimSpace(os.Getenv(envACMEEmail)),
+		ACMEStaging:  acmeStaging,
 	}
 	if cfg.Production {
 		if !releasePattern.MatchString(cfg.Release) {
@@ -136,16 +174,25 @@ func Load(defaultRelease string) (Config, error) {
 		if cfg.PublicEndpoint == "" {
 			return Config{}, fmt.Errorf("config: %s (agent-facing WireGuard host:port) is required in production", envEndpoint)
 		}
-		if len(cfg.TrustedProxyCIDRs) == 0 {
-			return Config{}, fmt.Errorf("config: %s requires at least one CIDR in production", envProxies)
+		// Traffic must be encrypted end to end: either the server terminates TLS itself (ACME) or a
+		// trusted reverse proxy does, never neither.
+		if cfg.TLSDomain == "" && len(cfg.TrustedProxyCIDRs) == 0 {
+			return Config{}, fmt.Errorf("config: production requires either %s (built-in TLS) or %s (a trusted reverse proxy)", envTLSDomain, envProxies)
 		}
 	}
 	return cfg, nil
 }
 
-// ListenAddr is the server's listen address without the rest of the configuration (healthcheck only
-// needs this and must not fail on unrelated production settings).
-func ListenAddr() string { return getOr(envAddr, ":8080") }
+// HealthProbeAddr is the address healthcheck should ask for /health/ready. It reads only the two
+// envs it needs and must not fail on an otherwise-incomplete production configuration: with a TLS
+// domain set, that is the unencrypted ACME listener (mounted with the app's routes, docs/SPEC.md
+// §4g), so the probe never depends on a certificate being ready yet.
+func HealthProbeAddr() string {
+	if strings.TrimSpace(os.Getenv(envTLSDomain)) != "" {
+		return getOr(envACMEHTTP, defaultACMEHTTP)
+	}
+	return getOr(envAddr, ":8080")
+}
 
 func getOr(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {

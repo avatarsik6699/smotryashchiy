@@ -1,0 +1,38 @@
+# Example deployment with built-in TLS (docs/RUNBOOK.md): no separate reverse proxy. The server
+# terminates HTTPS itself and gets its certificate from Let's Encrypt automatically.
+#
+# Point monitor.example.com's DNS A/AAAA record at this host before starting, and make sure ports
+# 80 and 443 are free (the server never binds them directly: Docker maps host 80/443 to the
+# container's unprivileged 8080/8443, so no root or capability is needed inside the container).
+#
+# First run: set the admin password (stdin only, >= 24 bytes), then start:
+#   printf '%s\n' "$PASSWORD" | docker compose -f docker-compose.acme.yml run --rm -T server admin set-password
+#   docker compose -f docker-compose.acme.yml up -d
+#
+# New domain or testing this file? Set SMOTRYASHCHIY_ACME_CA=staging first (uncomment below): Let's
+# Encrypt's staging CA has no rate limit but issues certificates browsers do not trust. Switch it
+# back to the default (remove the line) once a real certificate is what you want.
+services:
+  server:
+    image: ghcr.io/avatarsik6699/smotryashchiy:latest
+    restart: unless-stopped
+    read_only: true            # the image writes only under /data (database + ACME account/certs)
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      SMOTRYASHCHIY_PRODUCTION: "true"
+      SMOTRYASHCHIY_TLS_DOMAIN: "monitor.example.com"
+      SMOTRYASHCHIY_ACME_EMAIL: "you@example.com"   # optional: renewal/expiry notices
+      # SMOTRYASHCHIY_ACME_CA: "staging"             # uncomment while testing a new domain
+      # host:port agents dial for the WireGuard tunnel (UDP, must be reachable from your hosts).
+      SMOTRYASHCHIY_PUBLIC_ENDPOINT: "monitor.example.com:51820"
+      # SMOTRYASHCHIY_PUBLIC_URL is not set: it defaults to https://<TLS_DOMAIN>.
+    ports:
+      - "80:8080"          # ACME HTTP-01 challenge + redirect to https
+      - "443:8443"          # the app, TLS
+      - "51820:51820/udp"   # WireGuard tunnel for agents
+    volumes:
+      - smotryashchiy-data:/data
+
+volumes:
+  smotryashchiy-data:

@@ -188,6 +188,33 @@ Carry these into the first contract tests instead of rediscovering them in produ
 - A UDP port mapped for the tunnel (`-p 51820:51820/udp`) must be free on the host; an agent enrolled against a
   dev-mode server dials `127.0.0.1:<udp port>`, so test agents only work when host and container ports match.
 
+### certmagic's embedded HTTP-01 solver tries to bind port 80 itself, even with your own listener already up
+
+- **Symptoms**: `could not start listener for challenge server at :80: listen tcp :80: bind: permission
+  denied`, even though your own server already has an ACME-HTTP-01 listener running (wrapped with
+  `issuer.HTTPChallengeHandler`) on a different port.
+- **Root cause**: certmagic's default ("embedded") solver always tries to bind its own listener on port
+  80 (or `AltHTTPPort` if set) for the duration of each challenge. It only falls back to an externally
+  owned listener (yours) when that bind fails with "address already in use" — nothing about wrapping your
+  mux with `HTTPChallengeHandler` alone suppresses the embedded attempt.
+- **Fix**: set `ACMEIssuer.AltHTTPPort` to the exact port your own listener already occupies, so
+  certmagic's bind attempt collides with yours (`EADDRINUSE`) and it falls back correctly, instead of
+  leaving the default (port 80, which an unprivileged/capability-less process can never bind). Also
+  start your own listener (`net.Listen`, synchronously) **before** calling `ManageSync`: the ACME server
+  validates by connecting to it, so it must already be accepting when the challenge is issued
+  (`cmd/smotryashchiy/acme.go`).
+
+### certmagic's `Resolver` override applies to every DNS lookup the ACME client makes, not just the challenge domain
+
+- **Symptoms**: while testing against a local ACME server (Pebble) with a custom DNS resolver, the ACME
+  client's own request to the CA's directory URL fails to connect — it resolved the *CA's* hostname
+  through the test resolver too, which answered with the test domain's fake IP instead of the CA's real
+  one.
+- **Fix**: only the ACME *server* needs a resolver override that answers your test domain (Pebble's own
+  `-dnsserver` flag); the *client* (our binary) should resolve the CA's own hostname normally. Verified
+  with a full local exchange (server + Pebble + pebble-challtestsrv), see
+  `docs/changes/archive/10-acme-deploy-runbook.md` Implementation Notes.
+
 ### Docker-owned files break host operations (`EACCES` / `EPERM` / read-only)
 
 - **Symptoms**: file operations fail with `EACCES`, `EPERM`, "Permission denied" or

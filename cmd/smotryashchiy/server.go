@@ -94,8 +94,17 @@ func runServer(stdout io.Writer) error {
 	srv.Use(authhttp.RequireSession(auth))
 
 	serveErr := make(chan error, 1)
-	go func() { serveErr <- srv.Serve() }()
-	slog.Info("server started", "addr", cfg.Addr, "release", cfg.Release)
+	if cfg.TLSDomain != "" {
+		tlsConfig, err := setupACME(ctx, cfg, sqlDB)
+		if err != nil {
+			return err
+		}
+		go func() { serveErr <- srv.ServeHTTPS(cfg.HTTPSAddr, tlsConfig) }()
+		slog.Info("server started", "https_addr", cfg.HTTPSAddr, "acme_http_addr", cfg.ACMEHTTPAddr, "domain", cfg.TLSDomain, "release", cfg.Release)
+	} else {
+		go func() { serveErr <- srv.Serve() }()
+		slog.Info("server started", "addr", cfg.Addr, "release", cfg.Release)
+	}
 
 	select {
 	case err := <-serveErr:

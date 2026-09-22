@@ -7,7 +7,7 @@
 
 | Field | Value |
 |-------|-------|
-| Document Version | `v1.10` |
+| Document Version | `v1.11` |
 | Date | `2026-09-22` |
 | Architect / Owner | `avatarsik666@gmail.com` |
 | Stack | See [docs/STACK.md](./STACK.md) |
@@ -445,10 +445,36 @@ within a few seconds. Agent footprint: small enough to run on the smallest VPS.
 | 4 | Uptime prober. **Alert rules, alert lifecycle and Telegram are deferred** (architect decision 2026-09-21); revisit after the MVP is dogfooded |
 | 5 | Docker, logs, fail2ban in the agent |
 | 6 | Distribution: image/binary, ACME, backup, deploy workflow, runbook |
-| 7 | Dogfood on a fresh VPS for infraegev2; derive v2 backlog (incl. analytics) |
+| 7 | **Done** — dogfooded on a real VPS against infraegev2's production host; v2 backlog derived (§9) |
 
 ## 8. Open Questions
 
 - Stage-2 spike: local proof is Change 04's first item; reliability across common VPS/NAT setups is
-  confirmed at Stage 7, otherwise fall back to HTTPS push.
+  confirmed at Stage 7, otherwise fall back to HTTPS push. **Resolved at Stage 7**: confirmed
+  reliable agent→server over the public internet between two independent VPS providers (real
+  ACME/TLS, real WireGuard tunnel, ~16 days uptime as of the dogfood check).
 - Supported agent platforms: Linux amd64/arm64 for MVP (assumption).
+
+## 9. v2 Backlog (from the Stage 7 dogfood)
+
+Real deployment (server on a dedicated monitoring VPS, agent on infraegev2's own production host,
+both real providers, real Let's Encrypt certificate, real fail2ban/Docker/journald data) surfaced
+these candidates for the next planning round — none are committed yet, all need an architect brief
+before a `/plan`:
+
+- **Dashboard surfacing for Change 11's signals.** Docker container metrics, log events and
+  fail2ban checks already flow through the existing generic Checks/Events UI (confirmed in a real
+  browser — no code change was needed), but there's no dedicated view (e.g. per-container list,
+  log filter/search, a jail-status summary widget). Worth a UI-focused change once there's appetite.
+- **Event volume from health-check polling.** The container's own `/health/ready` polling produces
+  ~4 near-duplicate event lines per cycle (journald + Docker-log tail both capture it, doubled
+  again by request-start/request-complete logging). Not wrong, but noisy in the live Events list;
+  a future change should consider filtering health-check-only lines or a configurable quiet mode.
+- **Analytics** (named in the Stage 7 roadmap row) is still undefined — needs a concrete brief from
+  the architect on what "analytics" means here (the predecessor `sre-kit` had web analytics via
+  Umami, explicitly out of scope for this project's MVP; this may mean something else, e.g.
+  cross-host trend/aggregate views).
+- **Alerts and Telegram**, deferred at Stage 4, remain open for v2.
+- **Release automation** (`.github/workflows/release.yml`, Change 10) has never been exercised by
+  a real tag push — `/ship --release` has not been run for any change yet, so the workflow's
+  GHCR/GitHub-Release path is still only locally simulated.

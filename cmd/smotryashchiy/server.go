@@ -10,6 +10,9 @@ import (
 	"syscall"
 	"time"
 
+	analyticsapp "github.com/avatarsik6699/smotryashchiy/internal/analytics/application"
+	analyticsinfra "github.com/avatarsik6699/smotryashchiy/internal/analytics/infrastructure"
+	analyticshttp "github.com/avatarsik6699/smotryashchiy/internal/analytics/interfaces/http"
 	authapp "github.com/avatarsik6699/smotryashchiy/internal/auth/application"
 	authinfra "github.com/avatarsik6699/smotryashchiy/internal/auth/infrastructure"
 	authhttp "github.com/avatarsik6699/smotryashchiy/internal/auth/interfaces/http"
@@ -88,6 +91,12 @@ func runServer(stdout io.Writer) error {
 		uptimeapp.Options{Retention: time.Duration(cfg.RawRetentionDays) * 24 * time.Hour})
 	uptimehttp.NewHandlers(uptimeSvc).Register(srv.Mux)
 	go uptimeSvc.Run(ctx)
+	analyticsSvc := analyticsapp.NewService(analyticsinfra.NewStore(sqlDB), time.Now,
+		analyticsapp.Options{Retention: time.Duration(cfg.RawRetentionDays) * 24 * time.Hour})
+	analyticshttp.NewHandlers(analyticsSvc).Register(srv.Mux)
+	analyticshttp.NewCollectHandlers(analyticsSvc, cfg.TrustedProxyCIDRs).Register(srv.Mux)
+	analyticshttp.NewTrackHandlers().Register(srv.Mux)
+	go analyticsSvc.Run(ctx)
 	maintenance := telemetryapp.NewMaintenance(store, cfg.RawRetentionDays, cfg.RollupRetentionDays, time.Now)
 	go maintenance.Run(ctx)
 	srv.Mux.Handle("/", web.Handler()) // embedded SPA; the auth middleware keeps /api/ gated

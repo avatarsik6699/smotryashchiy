@@ -7,7 +7,7 @@
 
 | Field | Value |
 |-------|-------|
-| Document Version | `v1.13` |
+| Document Version | `v1.14` |
 | Date | `2026-09-22` |
 | Architect / Owner | `avatarsik666@gmail.com` |
 | Stack | See [docs/STACK.md](./STACK.md) |
@@ -40,8 +40,9 @@ looks healthy; observe only.
 |----------|----------|
 | Single Go binary: `server`, `agent`, `admin` modes | Remote actions, deployment, config mutation of targets |
 | Host metrics via own agent (CPU, RAM, swap, disk, network, load, uptime) | Adapters/plugins for third-party tools |
-| Docker container metrics via the local socket | Web analytics (deferred to a later change) |
-| Built-in uptime checks: HTTP, TCP, TLS expiry | Multi-user / RBAC / audit log |
+| Docker container metrics via the local socket | Multi-user / RBAC / audit log |
+| Built-in uptime checks: HTTP, TCP, TLS expiry | IP geolocation / country breakdown (fast-follow after Change 14/15) |
+| Site visitor analytics: JS snippet, cookieless (Changes 14–15) | |
 | Log/event collection: journald, Docker logs | Second notification channel |
 | Security signals: fail2ban bans and jail status | Distributed / high-cardinality storage |
 | ~~Alert rules, firing → resolved lifecycle, Telegram~~ *(deferred, see §7)* | Off-host backup (later; local snapshot bundle in §4f) |
@@ -59,6 +60,10 @@ Entities (carried over from the predecessor's proven contract):
   records, not host telemetry.
 - **Metric** — `{name, ts, value, labels}` time series. **Check** — `{name, ts, status: ok|warn|critical, meta}`.
   **Event** — `{ts, level, message, labels}`. **Alert** — derived by the router from rules.
+- **Site** — a website an operator tracks for visitor analytics (§4i, Changes 14–15); a bounded
+  context of its own, unrelated to Host telemetry. **Pageview** — `{site, ts, path, referrer_domain,
+  visitor_hash, browser, os, device}`, server-derived from an anonymous beacon; no persistent
+  visitor identity, no PII stored (§4i).
 
 Contract rules (from predecessor lessons, see `docs/KNOWN_GOTCHAS.md`): zero is a valid value;
 producer timestamps are validated (≤5 min in the future); idempotent batches; replays are stored
@@ -391,6 +396,60 @@ anything else (a failing healthcheck, an unrelated path, a non-access-log line) 
 still forwarded. This is a narrow, pattern-based filter on these two sources only; fail2ban events
 and all metrics/checks are untouched, and it is not a general log-level or path suppression.
 
+## 4i. Site visitor analytics (Changes 14–15)
+
+A new bounded context, unrelated to Host telemetry (§4.1–§4.6): a small JS snippet on a tracked
+website posts an anonymous pageview beacon to this server. Chosen over passively parsing access
+logs (§4h) because a client-side-routed SPA's in-app navigation never reaches the server at all —
+only the browser sees it — and because JS-based tracking gets "did not execute JavaScript" bot
+filtering close to free, which a server log can only approximate by parsing `User-Agent` strings
+(architect decision 2026-09-22, following a real dogfood target that is itself a SPA).
+
+**Privacy, by construction (decided, not configurable):** no cookie, no `localStorage`, no
+persistent visitor identifier ever leaves the browser or gets stored. A visitor's identity for
+grouping purposes is `sha256(daily_salt + site_id + request_IP + User-Agent)`, truncated to 16
+bytes; `daily_salt` rotates every UTC day (derived from a server-held secret, never exposed) so the
+same real visitor gets an unlinkable hash on the next day — this is the one thing that makes
+"unique visitors" and "pageviews per visit" computable without tracking anyone across days. The raw
+IP is used only to compute this hash for the current request and is never stored. `referrer` is
+reduced to its hostname before storage (a full referrer URL can itself leak PII, e.g. search terms
+in the query string).
+
+**Wire contract.** `POST /api/collect` (public, unauthenticated, CORS-enabled for a request's
+`Origin` only when it matches a registered site's domain): `{"site":"<site id>","url":"/path?query",
+"referrer":"https://…" ,"title":"…","screen":"1920x1080","language":"en-US"}` — `site` and `url`
+required, `url` ≤ 2048 bytes, others optional and capped similarly. Always answers `204` regardless
+of outcome (an unknown `site`, a bot match, or a malformed body are all silently dropped) — this
+endpoint must never let a prober distinguish "site exists" from "site does not," unlike the
+session-gated APIs elsewhere. Rate-limited per source IP (reusing `internal/platform/ratelimit`,
+the same mechanism as the login limiter) since it is the one write path with no auth at all.
+`browser`/`os`/`device` are derived server-side from the `User-Agent` request header, never taken
+from the client body (keeps the payload small and unspoofable-by-omission). A server-side
+known-bot `User-Agent` pattern list is a second filter beyond "the browser ran the JS at all" (some
+crawlers execute JavaScript).
+
+**Tracking snippet** (`GET /track.js`, served by the app, no build step for the tracked site):
+listens for `pushState`/`replaceState`/`popstate` in addition to the initial load, so a
+client-side-routed page change is its own pageview — the entire reason this change exists.
+
+**Storage.** `sites (id, name, domain, created_at)`. `pageviews (id, site_id, ts, path,
+referrer_domain, visitor_hash, browser, os, device)`, raw TTL shared with §4.5
+(`SMOTRYASHCHIY_RAW_RETENTION_DAYS`). `pageview_rollups_daily (site_id, day, path,
+unique_visitors, pageviews)`, primary key `(site_id, day, path)`, retained with the rollup TTL
+(§4.5) — daily, not hourly, because visitor-count questions ("how many yesterday") are asked at
+day granularity, unlike the metric rollups.
+
+**Read API** (session required): `GET /api/sites` → `{"sites":[{id,name,domain,created_at}]}`;
+`POST /api/sites {name,domain}` → `201` site plus the ready-to-paste `<script>` tag (`400` invalid,
+`409` duplicate domain); `DELETE /api/sites/{id}` → `204`, pageviews deleted with it; `GET
+/api/sites/{id}/stats?range=today|7d|30d` → `{pageviews, visitors, top_pages:[{path,count}],
+top_referrers:[{domain,count}]}`.
+
+**Deferred, not in Changes 14–15:** IP geolocation/country breakdown (needs a GeoIP dependency,
+§1.3); live pageview counts over the WebSocket stream (§4.6) — Change 15's Analytics view uses the
+same 60 s full-refresh cadence as the rest of the dashboard; richer charts (time-series, referrer/
+device breakdowns as bars) beyond the text ledgers in §5.
+
 ## 4a. Other interfaces
 
 `/healthz` and `/health/ready` (exact release) exist since Change 01; UI/admin APIs are specified
@@ -398,10 +457,19 @@ in the change that introduces them.
 
 ## 5. UI
 
-**One page, no navigation.** Opening `/` shows a single dashboard; separators are whitespace and
-hairlines, never cards. It is the simplification of the predecessor's Dashboard / Sources /
+**Two views, minimal navigation (Changes 14–15, architect decision 2026-09-22, supersedes the
+original "one page, no navigation" rule):** the original single-page design had no navigation by
+intent, but Site analytics (§4i) is a genuinely different domain — visitor/page/referrer breakdowns,
+not infrastructure health at a glance — and does not fit as another ledger row on the Monitoring
+view. A minimal text-style tab control in the command bar (`[monitoring] [analytics]`, same hairline/
+mono language, no icons) switches between the two; this is the only navigation the UI gains, it does
+not reopen the door to a router, deep links, or per-section pages. Separators everywhere stay
+whitespace and hairlines, never cards — the simplification of the predecessor's Dashboard / Sources /
 Notifications / Source-detail structure (`docs/reference/`), which stays frozen as a design donor.
-Alerts/Notifications is deferred with alerting (§7). The UPTIME ledger lists targets (state text, name and
+Alerts/Notifications is deferred with alerting (§7).
+
+**Monitoring view** (the default; everything below was true before Changes 14–15 and is unchanged).
+The UPTIME ledger lists targets (state text, name and
 target, latency with a sparkline, TLS days, age); targets are added through a dialog and removed with an
 inline confirmation, no separate page.
 
@@ -410,8 +478,17 @@ Layout, top to bottom: command bar (`$ smotryashchiy`, live-connection text, `+ 
 A host row shows name, freshness state, four sparklines with current values (CPU, memory, disk, network)
 and last-seen age; activating it expands the row in place (one open at a time) to large charts, disks per
 mount, network per interface, load, swap, checks and that host's events. The window is fixed at 1 hour;
-there are no tabs or theme switch. Login is not a page: the login form replaces the dashboard
+there is no theme switch. Login is not a page: the login form replaces the dashboard
 whenever an API call answers `401`.
+
+**Analytics view (Change 15).** Command bar gains `+ add site` alongside `+ add host` (only on this
+view). A **SITES** ledger (same Accordion pattern as HOSTS): each row shows name, domain, today's
+pageviews and unique visitors; activating one expands in place to text ledgers for the selected
+range (today/7d/30d, a small text toggle — the one exception to "the window is fixed," since a
+day-granularity domain has no sensible single fixed window) — pageviews, unique visitors, top 10
+pages, top 10 referrers. No charts yet (§4i defers them). `+ add site` opens a dialog (name, domain)
+and on creation shows the `<script>` snippet to paste into the tracked site, copy-to-clipboard with
+an `aria-live` confirmation — the same shape as the host enrollment dialog.
 
 **EVENTS filtering (Change 12, architect decision 2026-09-22, supersedes the original "no filters"
 rule):** the original single-page design had no filters by intent, but Change 11's journald/Docker-log/
@@ -419,8 +496,9 @@ fail2ban collectors made the unfiltered stream too broad to scan on a busy host 
 polling alone produces several lines per cycle). EVENTS gains exactly one filter — by source label
 (`unit`, `container` or `jail`, whichever the event carries; unlabeled events remain visible when
 unfiltered) — applied client-side against the already-loaded window, no new query parameter or backend
-change. This stays the only filter the UI offers; it does not reopen the door to tabs, a theme switch, or
-filters on other sections (HOSTS, UPTIME). Each event row also gains a visible source label (text,
+change. This stays the only filter the UI offers; it does not reopen the door to a theme switch or
+filters on other sections (HOSTS, UPTIME) — the Monitoring/Analytics tabs added later (Changes 14–15)
+are navigation between two domains, not a filter within one. Each event row also gains a visible source label (text,
 same source as the filter draws from) — today only host/level/time/message are shown, so there is
 currently no way to tell which source an event came from without reading the message body.
 
@@ -462,7 +540,9 @@ npm. Vitest + Testing Library for unit tests; Playwriter drives the real browser
 
 Security: no hardcoded secrets, secrets scan and dependency audit in the Full Gate, non-root
 images. Backup: `admin` command produces a consistent SQLite snapshot bundle. Live-update latency
-within a few seconds. Agent footprint: small enough to run on the smallest VPS.
+within a few seconds. Agent footprint: small enough to run on the smallest VPS. Privacy (site
+analytics, §4i): no cookies, no persistent visitor identifier, no raw IP stored, no cross-site or
+cross-day tracking — see §4i for the exact construction.
 
 ## 7. Roadmap
 
@@ -496,11 +576,9 @@ before a `/plan`:
   panel, generic Check-meta display, EVENTS source labels + filter).
 - ~~**Event volume from health-check polling.**~~ In progress as Change 13 (§4h's health-check
   noise filter).
-- **Analytics** (named in the Stage 7 roadmap row) is still undefined — needs a concrete brief from
-  the architect on what "analytics" means here (the predecessor `sre-kit` had web analytics via
-  Umami, explicitly out of scope for this project's MVP; this may mean something else, e.g.
-  cross-host trend/aggregate views).
+- ~~**Analytics.**~~ Clarified (2026-09-22): cookieless JS-based site visitor analytics, replacing
+  the predecessor's separate Umami container. In progress as Changes 14 (ingest/storage/API/
+  snippet, §4i) and 15 (Analytics view, §5).
 - **Alerts and Telegram**, deferred at Stage 4, remain open for v2.
-- **Release automation** (`.github/workflows/release.yml`, Change 10) has never been exercised by
-  a real tag push — `/ship --release` has not been run for any change yet, so the workflow's
-  GHCR/GitHub-Release path is still only locally simulated.
+- ~~**Release automation** never exercised by a real tag push.~~ Done: `v0.1.0` (2026-09-22) went
+  through the full gate-then-publish workflow — GHCR image and GitHub Release both confirmed live.

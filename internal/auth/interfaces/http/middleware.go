@@ -16,6 +16,9 @@ var publicAPIPaths = map[string]bool{
 	"/api/enroll":     true,
 	// Answers 200 either way (see Handlers.sessionState) so a logged-out page load is not a 401.
 	"/api/auth/session": true,
+	// Anonymous visitor browsers call this, not an operator session (docs/SPEC.md §4i); it is its
+	// own line of defense (rate limit, unknown-site silently dropped), not session-gated.
+	"/api/collect": true,
 }
 
 // isAPIPath reports whether path belongs to the API namespace.

@@ -10,7 +10,12 @@ const NOW = Date.now()
 const iso = (offsetMs: number) => new Date(NOW + offsetMs).toISOString()
 const fetchMock = vi.fn<typeof fetch>()
 
-const host = (id: string, name: string, lastSeenOffsetMs: number | null): HostDTO => ({ id, name, created_at: iso(-86_400_000), last_seen_at: lastSeenOffsetMs === null ? null : iso(lastSeenOffsetMs) })
+const host = (id: string, name: string, lastSeenOffsetMs: number | null): HostDTO => ({
+  id,
+  name,
+  created_at: iso(-86_400_000),
+  last_seen_at: lastSeenOffsetMs === null ? null : iso(lastSeenOffsetMs),
+})
 const metric = (h: string, name: string, offsetMs: number, value: number, labels: Record<string, string> = {}): MetricDTO => ({ host: h, name, ts: iso(offsetMs), value, labels })
 const event = (h: string, offsetMs: number, level: EventDTO['level'], message: string): EventDTO => ({ host: h, ts: iso(offsetMs), level, message, labels: {} })
 
@@ -18,7 +23,13 @@ interface Fixture {
   hosts: HostDTO[]
   latest: MetricDTO[]
   events: EventDTO[]
-  checks?: { host: string; name: string; ts: string; status: 'ok' | 'warn' | 'critical'; meta: unknown }[]
+  checks?: {
+    host: string
+    name: string
+    ts: string
+    status: 'ok' | 'warn' | 'critical'
+    meta: unknown
+  }[]
   targets?: UptimeTargetDTO[]
 }
 
@@ -27,10 +38,22 @@ const FULL: Fixture = {
   latest: [
     metric('a', 'cpu.usage_percent', -5_000, 37.4),
     metric('a', 'memory.used_percent', -5_000, 57),
-    metric('a', 'disk.used_percent', -5_000, 41, { mount: '/', device: '/dev/sda1' }),
-    metric('a', 'disk.used_percent', -5_000, 88, { mount: '/data', device: '/dev/sdb1' }),
-    metric('a', 'disk.used_bytes', -5_000, 8 * 1024 ** 3, { mount: '/data', device: '/dev/sdb1' }),
-    metric('a', 'disk.total_bytes', -5_000, 10 * 1024 ** 3, { mount: '/data', device: '/dev/sdb1' }),
+    metric('a', 'disk.used_percent', -5_000, 41, {
+      mount: '/',
+      device: '/dev/sda1',
+    }),
+    metric('a', 'disk.used_percent', -5_000, 88, {
+      mount: '/data',
+      device: '/dev/sdb1',
+    }),
+    metric('a', 'disk.used_bytes', -5_000, 8 * 1024 ** 3, {
+      mount: '/data',
+      device: '/dev/sdb1',
+    }),
+    metric('a', 'disk.total_bytes', -5_000, 10 * 1024 ** 3, {
+      mount: '/data',
+      device: '/dev/sdb1',
+    }),
     metric('a', 'uptime.seconds', -5_000, 14 * 86400 + 6 * 3600),
     metric('b', 'cpu.usage_percent', -3 * 60_000, 0), // a measured zero, still fresh enough
     metric('b', 'memory.used_percent', -3 * 60_000, 20),
@@ -49,8 +72,14 @@ function serve(fx: Fixture, overrides: Record<string, () => Response> = {}) {
     const url = String(input)
     for (const [prefix, make] of Object.entries(overrides)) if (url.startsWith(prefix)) return make()
     if (url.startsWith('/api/hosts')) return json({ hosts: fx.hosts })
-    if (url.startsWith('/api/metrics')) return json({ metrics: url.includes('latest=true') ? fx.latest : url.includes('host=') ? fx.latest.filter((m) => url.includes(`host=${m.host}`) && url.includes(`name=${encodeURIComponent(m.name)}`)) : [] })
-    if (url.startsWith('/api/events')) return json({ events: url.includes('host=') ? fx.events.filter((e) => url.includes(`host=${e.host}`)) : fx.events })
+    if (url.startsWith('/api/metrics'))
+      return json({
+        metrics: url.includes('latest=true') ? fx.latest : url.includes('host=') ? fx.latest.filter((m) => url.includes(`host=${m.host}`) && url.includes(`name=${encodeURIComponent(m.name)}`)) : [],
+      })
+    if (url.startsWith('/api/events'))
+      return json({
+        events: url.includes('host=') ? fx.events.filter((e) => url.includes(`host=${e.host}`)) : fx.events,
+      })
     if (url.startsWith('/api/checks')) return json({ checks: fx.checks ?? [] })
     if (url.startsWith('/api/uptime')) return json({ targets: fx.targets ?? [] })
     throw new Error(`unexpected ${url}`)
@@ -196,6 +225,8 @@ describe('HOSTS ledger', () => {
   it('opens and closes with the keyboard', async () => {
     const user = userEvent.setup()
     await mount()
+    await user.tab() // monitoring tab
+    await user.tab() // analytics tab
     await user.tab() // add host
     await user.tab() // logout
     await user.tab() // first row
@@ -238,7 +269,9 @@ describe('host details', () => {
   it('degrades to the overview data when the history request fails', async () => {
     const user = userEvent.setup()
     await mount(FULL, {})
-    serve(FULL, { '/api/metrics?host=': () => json({ error: 'db busy' }, 500) })
+    serve(FULL, {
+      '/api/metrics?host=': () => json({ error: 'db busy' }, 500),
+    })
     await user.click(row('vps-a'))
     expect(await screen.findByText(/Could not load the full history \(db busy\)/)).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Disks' })).toBeInTheDocument()
@@ -260,7 +293,11 @@ describe('EVENTS', () => {
 
   it('shows a live event that arrives through the stream', async () => {
     const { store } = await mount()
-    store.handleFrame({ type: 'event', host_id: 'b', record: event('b', 0, 'critical', 'disk full') })
+    store.handleFrame({
+      type: 'event',
+      host_id: 'b',
+      record: event('b', 0, 'critical', 'disk full'),
+    })
     const events = screen.getByRole('region', { name: 'Events' })
     expect(await within(events).findByText('disk full')).toBeInTheDocument()
     expect(within(events).getAllByRole('listitem')[0]).toHaveTextContent('CRITICAL')
@@ -271,7 +308,11 @@ describe('live values', () => {
   it('updates a row when a metric frame arrives and marks the host seen', async () => {
     const { store } = await mount()
     expect(row('vps-d')).toHaveTextContent('NEW')
-    store.handleFrame({ type: 'metric', host_id: 'd', record: metric('d', 'cpu.usage_percent', 0, 12) })
+    store.handleFrame({
+      type: 'metric',
+      host_id: 'd',
+      record: metric('d', 'cpu.usage_percent', 0, 12),
+    })
     await waitFor(() => expect(row('vps-d')).toHaveTextContent('CPU12%'))
     expect(row('vps-d')).toHaveTextContent('OK')
   })

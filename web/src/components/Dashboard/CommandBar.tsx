@@ -10,14 +10,22 @@ const CONNECTION_TEXT: Record<ConnectionState, string> = {
   offline: 'offline',
 }
 
+export type View = 'monitoring' | 'analytics'
+
 interface CommandBarProps {
   connection: ConnectionState
+  view: View
+  onViewChange: (view: View) => void
   onAddHost: () => void
+  onAddSite: () => void
   onLogout: () => void
 }
 
-/** Sticky top bar: where you are, whether data is live, and the two actions. No navigation. */
-export function CommandBar({ connection, onAddHost, onLogout }: CommandBarProps) {
+/**
+ * Sticky top bar: where you are, whether data is live, the Monitoring/Analytics tabs (the only
+ * navigation the UI has, docs/SPEC.md §5, Changes 14-15), and one add-action per view.
+ */
+export function CommandBar({ connection, view, onViewChange, onAddHost, onAddSite, onLogout }: CommandBarProps) {
   return (
     <header className={styles.bar}>
       <span className={styles.brand}>
@@ -26,14 +34,28 @@ export function CommandBar({ connection, onAddHost, onLogout }: CommandBarProps)
         </span>
         smotryashchiy
       </span>
+      <nav className={styles.tabs} aria-label="View">
+        <button type="button" className={styles.tab} data-active={view === 'monitoring'} onClick={() => onViewChange('monitoring')}>
+          monitoring
+        </button>
+        <button type="button" className={styles.tab} data-active={view === 'analytics'} onClick={() => onViewChange('analytics')}>
+          analytics
+        </button>
+      </nav>
       <span className={styles.connection} role="status" data-connection={connection}>
         <span className={styles.pulse} aria-hidden="true" />
         {CONNECTION_TEXT[connection]}
       </span>
       <span className={styles.actions}>
-        <Button className={shared.button} onClick={onAddHost}>
-          + add host
-        </Button>
+        {view === 'monitoring' ? (
+          <Button className={shared.button} onClick={onAddHost}>
+            + add host
+          </Button>
+        ) : (
+          <Button className={shared.button} onClick={onAddSite}>
+            + add site
+          </Button>
+        )}
         <Button className={shared.button} onClick={onLogout}>
           logout
         </Button>

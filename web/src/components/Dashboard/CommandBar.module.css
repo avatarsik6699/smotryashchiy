@@ -19,6 +19,32 @@
   color: var(--accent);
 }
 
+.tabs {
+  display: inline-flex;
+  gap: var(--space-1);
+}
+
+.tab {
+  padding: 2px var(--space-1);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.tab:hover,
+.tab:focus-visible {
+  color: var(--text);
+}
+
+.tab[data-active='true'] {
+  border-color: var(--hairline);
+  color: var(--text);
+}
+
 .connection {
   display: inline-flex;
   align-items: center;

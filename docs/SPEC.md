@@ -7,7 +7,7 @@
 
 | Field | Value |
 |-------|-------|
-| Document Version | `v1.14` |
+| Document Version | `v1.15` |
 | Date | `2026-09-22` |
 | Architect / Owner | `avatarsik666@gmail.com` |
 | Stack | See [docs/STACK.md](./STACK.md) |
@@ -488,7 +488,11 @@ range (today/7d/30d, a small text toggle — the one exception to "the window is
 day-granularity domain has no sensible single fixed window) — pageviews, unique visitors, top 10
 pages, top 10 referrers. No charts yet (§4i defers them). `+ add site` opens a dialog (name, domain)
 and on creation shows the `<script>` snippet to paste into the tracked site, copy-to-clipboard with
-an `aria-live` confirmation — the same shape as the host enrollment dialog.
+an `aria-live` confirmation — the same shape as the host enrollment dialog. The dialog's copy also
+notes that a site with its own Content-Security-Policy needs to allow this server's origin in
+`script-src` and `connect-src` (a real deployment gotcha found during Change 14's live verification
+— a CSP'd site silently fails to load the snippet or send beacons, with no error visible to the
+operator here).
 
 **EVENTS filtering (Change 12, architect decision 2026-09-22, supersedes the original "no filters"
 rule):** the original single-page design had no filters by intent, but Change 11's journald/Docker-log/

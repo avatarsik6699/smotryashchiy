@@ -64,3 +64,31 @@ export interface UptimeTargetDTO {
   /** [ts_ms, latency_ms | null] for the last hour; null marks a failed check. */
   latency: [number, number | null][]
 }
+
+// Site visitor analytics (docs/SPEC.md §4i). A bounded context of its own, unrelated to host
+// telemetry: no cookies, no persistent visitor identity ever reaches the browser.
+export interface SiteDTO {
+  id: string
+  name: string
+  domain: string
+  created_at: string
+}
+
+export type StatsRange = 'today' | '7d' | '30d'
+
+export interface PathCountDTO {
+  path: string
+  count: number
+}
+
+export interface DomainCountDTO {
+  domain: string
+  count: number
+}
+
+export interface SiteStatsDTO {
+  pageviews: number
+  visitors: number
+  top_pages: PathCountDTO[]
+  top_referrers: DomainCountDTO[]
+}

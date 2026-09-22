@@ -9,7 +9,7 @@
 | Change | `09` |
 | Slug | `packaging-and-backup` |
 | Title | Packaging and Backup |
-| Status | `active` |
+| Status | `archived` |
 | Branch | `feature/09-packaging-and-backup` |
 
 ---

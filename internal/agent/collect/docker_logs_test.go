@@ -105,6 +105,32 @@ func TestDockerLogsCollectTailsARunningContainer(t *testing.T) {
 	}
 }
 
+func TestDockerLogsCollectDropsRoutineHealthCheckLines(t *testing.T) {
+	container := dockerContainer{ID: "abc123", Names: []string{"/web"}, Image: "nginx:latest"}
+	var frames bytes.Buffer
+	frames.Write(dockerLogFrame(false, `INFO: 127.0.0.1:1 - "GET /health/ready HTTP/1.1" 200 OK`+"\n"))
+	frames.Write(dockerLogFrame(false, "real event\n"))
+	sock := fakeDockerdWithLogs(t, container, frames.Bytes())
+
+	d := NewDockerLogs(t.Context(), sock)
+	var events []Event
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		got, err := d.Collect()
+		if err != nil {
+			t.Fatalf("Collect: %v", err)
+		}
+		events = append(events, got...)
+		if len(events) >= 1 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if len(events) != 1 || events[0].Message != "real event" {
+		t.Fatalf("got %+v, want only the non-health-check event", events)
+	}
+}
+
 func TestDockerLogsCollectFailsWhenDaemonIsUnreachable(t *testing.T) {
 	d := NewDockerLogs(t.Context(), filepath.Join(t.TempDir(), "no-such.sock"))
 	deadline := time.Now().Add(2 * time.Second)

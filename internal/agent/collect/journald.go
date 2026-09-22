@@ -76,6 +76,9 @@ func (j *Journald) readLoop(stdout io.Reader) {
 		if err := json.Unmarshal(scanner.Bytes(), &line); err != nil {
 			continue // one malformed line must not stop the tail
 		}
+		if isRoutineHealthCheck(line.Message) {
+			continue // docs/SPEC.md §4h: routine 2xx health-check polling is not forwarded
+		}
 		ts := time.Now()
 		if us, err := strconv.ParseInt(line.RealTime, 10, 64); err == nil {
 			ts = time.UnixMicro(us)

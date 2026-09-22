@@ -132,6 +132,9 @@ func (d *DockerLogs) tail(ctx context.Context, id, name string) {
 		return
 	}
 	demuxDockerLogStream(resp.Body, func(stderr bool, line string) {
+		if isRoutineHealthCheck(line) {
+			return // docs/SPEC.md §4h: routine 2xx health-check polling is not forwarded
+		}
 		level := "info"
 		if stderr {
 			level = "warn"

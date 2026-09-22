@@ -7,7 +7,7 @@
 
 | Field | Value |
 |-------|-------|
-| Document Version | `v1.12` |
+| Document Version | `v1.13` |
 | Date | `2026-09-22` |
 | Architect / Owner | `avatarsik666@gmail.com` |
 | Stack | See [docs/STACK.md](./STACK.md) |
@@ -379,7 +379,17 @@ placeholder row.
 No wire-format change: §4.1's `metrics`/`checks`/`events` shapes already cover all three signal
 types (the fail2ban ban example in §4.1 is exactly this). No new Read API endpoints — existing
 `/api/metrics`, `/api/checks`, `/api/events` (§4.3) serve the new names/labels like any other.
-Dashboard surfacing of these signals is deferred to a follow-up UI change once this lands.
+Dashboard surfacing of these signals is delivered in Change 12 (CONTAINERS panel, generic Check-meta
+display, EVENTS source labels and filter — §5).
+
+**Routine health-check noise (Change 13):** the journald and Docker-log event sources see every
+access-log line a monitored process writes, including its own health/readiness endpoint being
+polled every few seconds — confirmed in real dogfooding to drown out actually-interesting events.
+Both collectors drop an access-log-style line that names a health/readiness path
+(`/health`, `/healthz`, `/ready`, `/health/ready`, case-insensitive) *and* reports a 2xx status —
+anything else (a failing healthcheck, an unrelated path, a non-access-log line) is unaffected and
+still forwarded. This is a narrow, pattern-based filter on these two sources only; fail2ban events
+and all metrics/checks are untouched, and it is not a general log-level or path suppression.
 
 ## 4a. Other interfaces
 
@@ -484,10 +494,8 @@ before a `/plan`:
 
 - ~~**Dashboard surfacing for Change 11's signals.**~~ In progress as Change 12 (§5's CONTAINERS
   panel, generic Check-meta display, EVENTS source labels + filter).
-- **Event volume from health-check polling.** The container's own `/health/ready` polling produces
-  ~4 near-duplicate event lines per cycle (journald + Docker-log tail both capture it, doubled
-  again by request-start/request-complete logging). Not wrong, but noisy in the live Events list;
-  a future change should consider filtering health-check-only lines or a configurable quiet mode.
+- ~~**Event volume from health-check polling.**~~ In progress as Change 13 (§4h's health-check
+  noise filter).
 - **Analytics** (named in the Stage 7 roadmap row) is still undefined — needs a concrete brief from
   the architect on what "analytics" means here (the predecessor `sre-kit` had web analytics via
   Umami, explicitly out of scope for this project's MVP; this may mean something else, e.g.

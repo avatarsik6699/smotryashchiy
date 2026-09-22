@@ -62,6 +62,31 @@ func TestJournaldCollectDrainsBufferedLinesWithLevelsAndUnit(t *testing.T) {
 	}
 }
 
+func TestJournaldCollectDropsRoutineHealthCheckLines(t *testing.T) {
+	fakeJournalctl(t, []string{
+		`{"MESSAGE":"INFO: 127.0.0.1:1 - \"GET /health/ready HTTP/1.1\" 200 OK","PRIORITY":"6","_SYSTEMD_UNIT":"docker.service","__REALTIME_TIMESTAMP":"1758537600000000"}`,
+		`{"MESSAGE":"real event","PRIORITY":"6","_SYSTEMD_UNIT":"docker.service","__REALTIME_TIMESTAMP":"1758537601000000"}`,
+	})
+	j := NewJournald(t.Context())
+
+	var events []Event
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		got, err := j.Collect()
+		if err != nil {
+			t.Fatalf("Collect: %v", err)
+		}
+		events = append(events, got...)
+		if len(events) >= 1 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if len(events) != 1 || events[0].Message != "real event" {
+		t.Fatalf("got %+v, want only the non-health-check event", events)
+	}
+}
+
 func TestJournaldLevelMapping(t *testing.T) {
 	cases := map[string]string{"0": "error", "3": "error", "4": "warn", "5": "info", "6": "info", "7": "info", "garbage": "info"}
 	for priority, want := range cases {

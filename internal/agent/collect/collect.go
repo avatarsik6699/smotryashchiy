@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Sample is one measured value of a metric series.
@@ -25,6 +26,41 @@ type Collector interface {
 	Name() string
 	// Collect returns the samples measurable right now. An error means nothing was measured.
 	Collect() ([]Sample, error)
+}
+
+// Check is one measured health state for the current tick (docs/SPEC.md §4.1).
+type Check struct {
+	Name   string
+	Status string // ok|warn|critical
+	Meta   map[string]any
+}
+
+// CheckCollector produces the checks of one family for the current tick.
+type CheckCollector interface {
+	Name() string
+	// Collect returns the checks measurable right now. An error means nothing was measured.
+	Collect() ([]Check, error)
+}
+
+// Event is one discrete occurrence forwarded to the server's events table (docs/SPEC.md §4.1). TS
+// is optional: zero means "stamp it with the current tick" (a live snapshot, like a Check); a
+// tailed source sets its own TS so several events buffered in one tick keep distinct timestamps —
+// the server's event identity is (host, ts, level, message, labels), so same-tick stamping would
+// silently collapse two genuinely different same-message events into one.
+type Event struct {
+	TS      time.Time
+	Level   string // info|warn|error|critical
+	Message string
+	Labels  map[string]string
+}
+
+// EventCollector produces the events observed since its last Collect call. Unlike Collector and
+// CheckCollector (a snapshot of current state), this is typically a continuous tailer that buffers
+// internally between ticks; Collect drains that buffer. An error means the source is unavailable
+// this tick (a transient tail gap), not that zero events occurred.
+type EventCollector interface {
+	Name() string
+	Collect() ([]Event, error)
 }
 
 // Proc locates the procfs tree; tests point it at fixtures.

@@ -215,6 +215,48 @@ Carry these into the first contract tests instead of rediscovering them in produ
   with a full local exchange (server + Pebble + pebble-challtestsrv), see
   `docs/changes/archive/10-acme-deploy-runbook.md` Implementation Notes.
 
+### A tailed collector's events need their own timestamp, not the batch's tick time
+
+- **Symptoms**: two genuinely distinct log lines (e.g. two identical warning messages a few seconds
+  apart) silently collapse into one stored row.
+- **Root cause**: the agent's wire batch stamps every record with one `ts` per tick (`BuildBatch`).
+  That is correct for a *snapshot* source (CPU, memory — "the value right now"), but a tailing
+  source (journald, Docker container logs, fail2ban) can buffer several lines within one tick; if
+  they all get the same tick `ts`, two lines with identical `level`+`message`+`labels` collide under
+  the server's event identity `(host, ts, level, message, canonical labels)` and the second is
+  stored-once as a duplicate.
+- **Fix**: `collect.Event` carries an optional `TS`; a tailing collector sets it from the source's
+  own timestamp (journald's `__REALTIME_TIMESTAMP`) and `BuildBatch` uses it instead of the tick
+  time when non-zero (`internal/agent/batch.go`, Change 11). A snapshot-style check/event can leave
+  `TS` zero and get the tick time, same as before.
+
+### fail2ban jail names routinely contain hyphens, which the metric/check name regex forbids
+
+- **Symptoms**: `server permanently rejected a batch; dropping it ... checks[0].name: must match
+  ^[a-z][a-z0-9_.]{0,127}$` — found only by deploying against a real production host (Change 11's
+  Stage-7 target VPS), not in local testing, because the local dev jail was named plainly (`sshd`).
+- **Root cause**: fail2ban jail names are free-form and hyphens are idiomatic
+  (`infraege-nginx-limit`, `nginx-limit-req`, …), but the server's metric/check `name` field only
+  allows `[a-z0-9_.]` (docs/SPEC.md §4.1) — hyphens are not in that set.
+- **Fix**: sanitize the jail name into the check name (`checkNameSafe`,
+  `internal/agent/collect/fail2ban.go`: lowercase, any character outside `[a-z0-9_.]` becomes `_`)
+  and keep the original jail name in `Meta.jail` for display. Any collector deriving a metric/check
+  *name* from free-form host data (not just fail2ban) needs the same sanitization — labels have no
+  such restriction and don't need it.
+
+### Docker's multiplexed log stream frames don't align with line boundaries
+
+- **Symptoms**: naively splitting each `/containers/{id}/logs?follow=true` read on newlines
+  produces truncated or merged lines when a line's bytes straddle two TCP reads.
+- **Root cause**: the stream is framed at the byte level (8-byte header: stream type, 3 zero bytes,
+  big-endian `uint32` payload size — https://docs.docker.com/reference/api/engine/ — "Stream
+  format"), completely independent of where the underlying process's `\n`s fall; one frame can end
+  mid-line.
+- **Fix**: demux by the frame header first (`io.ReadFull` for the 8 bytes, then for the declared
+  payload size), then split *that* payload on `\n` while carrying the trailing partial line forward
+  per stream (stdout and stderr buffered separately) to prepend on the next frame
+  (`internal/agent/collect/docker_logs.go`'s `demuxDockerLogStream`).
+
 ### Docker-owned files break host operations (`EACCES` / `EPERM` / read-only)
 
 - **Symptoms**: file operations fail with `EACCES`, `EPERM`, "Permission denied" or

@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/netip"
 	"os"
@@ -169,10 +170,14 @@ func Dial(ctx context.Context, cfg Config) (*Session, error) {
 	if err := cfg.validate(); err != nil {
 		return nil, err
 	}
+	endpoint, err := resolveEndpoint(ctx, cfg.ServerEndpoint)
+	if err != nil {
+		return nil, fmt.Errorf("agent: resolve server endpoint: %w", err)
+	}
 	tunnel, err := transport.NewClient(ctx, transport.ClientConfig{
 		PrivateKey:      cfg.PrivateKey,
 		ServerPublicKey: cfg.ServerPublicKey,
-		Endpoint:        cfg.ServerEndpoint,
+		Endpoint:        endpoint,
 		TunnelIP:        netip.MustParseAddr(cfg.TunnelIP),
 		ServerTunnelIP:  netip.MustParseAddr(cfg.ServerTunnelIP),
 	})
@@ -184,6 +189,33 @@ func Dial(ctx context.Context, cfg Config) (*Session, error) {
 		url:    fmt.Sprintf("http://%s/api/ingest", netip.AddrPortFrom(tunnel.ServerIP(), transport.IngestPort)),
 		client: tunnel.HTTPClient(httpTimeout),
 	}, nil
+}
+
+// resolveEndpoint turns a possibly-DNS host:port into a numeric one: wireguard-go's IPC endpoint
+// setter does not resolve hostnames itself (docs/KNOWN_GOTCHAS.md).
+func resolveEndpoint(ctx context.Context, endpoint string) (string, error) {
+	host, port, err := net.SplitHostPort(endpoint)
+	if err != nil {
+		return "", err
+	}
+	if net.ParseIP(host) != nil {
+		return endpoint, nil
+	}
+	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return "", err
+	}
+	if len(addrs) == 0 {
+		return "", fmt.Errorf("no addresses for %q", host)
+	}
+	resolved := addrs[0]
+	for _, a := range addrs {
+		if a.IP.To4() != nil {
+			resolved = a
+			break
+		}
+	}
+	return net.JoinHostPort(resolved.IP.String(), port), nil
 }
 
 // Send posts batch with its Idempotency-Key. A non-200 answer is returned as *StatusError.

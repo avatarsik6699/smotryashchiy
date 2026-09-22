@@ -7,8 +7,8 @@
 
 | Field | Value |
 |-------|-------|
-| Document Version | `v1.9` |
-| Date | `2026-09-21` |
+| Document Version | `v1.10` |
+| Date | `2026-09-22` |
 | Architect / Owner | `avatarsik666@gmail.com` |
 | Stack | See [docs/STACK.md](./STACK.md) |
 | Domain | Self-contained self-hosted monitoring for solo developers and small teams |
@@ -339,6 +339,47 @@ The server probes operator-defined **targets** itself; nothing runs on the monit
   reach the tunnel, restore refused because the server is still running, disk filling up, a lost admin
   password), plus upgrade/rollback. `docs/DEPLOY.md` keeps the Change 09 reverse-proxy quick start and
   now links here for ACME and incidents.
+
+## 4h. Docker, logs and fail2ban collectors (Change 11, Stage 5)
+
+Three new agent collectors, all read-only (no control actions — never start/stop/restart anything),
+each independently optional: a host without Docker, journald, or fail2ban simply omits that
+collector's output, same as an unreadable `/proc` source (§4c) — never a fabricated zero or an empty
+placeholder row.
+
+- **Docker container metrics** (local socket, `unix:///var/run/docker.sock`, read-only API calls
+  only — `GET /containers/json`, `GET /containers/{id}/stats?stream=false`): one `metrics` row per
+  running container per tick for `docker.container.cpu_percent` and
+  `docker.container.memory_used_bytes`/`docker.container.memory_used_percent`, labeled
+  `container` (name) and `image`. A container's own metrics stop appearing once it exits — the last
+  known values are not repeated (§4.3 `latest=true` naturally ages out on its own once the row is no
+  longer refreshed within the query window, no separate "container removed" signal is needed).
+  Missing/unreadable socket (no Docker installed, or the agent's user lacks access) disables this
+  collector for the run, logged once, like any other collector failure.
+- **Log/event collection** (journald + Docker container logs): tailed continuously (not polled),
+  forwarded as `events` (§4.1) with `level` mapped from syslog priority (`err`/`crit`+ → `error`,
+  `warning` → `warn`, else `info`), `message` truncated to the existing 2048-byte cap, and labels
+  `unit` (journald) or `container` (Docker logs). Bounded like any other event: the existing batch
+  cap (≤1000 records) and the offline spool bounds (5000 batches/64 MiB, §4c) are the backpressure
+  mechanism — a burst of log lines competes with metrics/checks for the same batch and spool budget,
+  there is no separate unbounded log buffer. journald is read via `journalctl -f -o json` (no cgo
+  dependency, matches the "no third-party agent library" rule already applied to host metrics in
+  §4c); a source that cannot be tailed (journald absent, e.g. non-systemd hosts) disables that part
+  of the collector, logged once.
+- **fail2ban signals**: ban/unban lines tailed from fail2ban's own log file are forwarded as
+  `events` (`level=warn` for a ban, `info` for an unban, `message` e.g. `"Ban 203.0.113.7"`, labels
+  `jail`). Per-jail status (currently banned count) is a `checks` row per jail,
+  `name=fail2ban.jail.<jail>`, `status=ok`, `meta={"currently_banned": N}`, sourced from
+  `fail2ban-client status`/`status <jail>` (text, stable across versions) rather than parsing
+  fail2ban's own jail-config cascade (`jail.conf`/`jail.d/*`/`jail.local`, which is materially more
+  complex to get right) — this needs the agent to be able to reach fail2ban's control socket, true
+  of our own deployment (runs as root). fail2ban absent (not installed, socket/log unreadable)
+  disables both parts, logged once — this is not an error for hosts that don't run it.
+
+No wire-format change: §4.1's `metrics`/`checks`/`events` shapes already cover all three signal
+types (the fail2ban ban example in §4.1 is exactly this). No new Read API endpoints — existing
+`/api/metrics`, `/api/checks`, `/api/events` (§4.3) serve the new names/labels like any other.
+Dashboard surfacing of these signals is deferred to a follow-up UI change once this lands.
 
 ## 4a. Other interfaces
 

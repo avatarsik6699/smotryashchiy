@@ -10,6 +10,8 @@
 .env
 *.key
 secrets*.json
+secrets.enc.yaml
+athanor.yaml
 
 # Frontend (built UI: see the web/dist rules below)
 # Local agent state

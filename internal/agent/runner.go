@@ -20,14 +20,16 @@ const (
 
 // RunConfig configures the long-running agent.
 type RunConfig struct {
-	Interval   time.Duration
-	SpoolDir   string
-	MaxBatches int   // 0 = spool default
-	MaxBytes   int64 // 0 = spool default
-	Collectors []collect.Collector
-	Dial       Dialer
-	Now        func() time.Time
-	Log        *slog.Logger
+	Interval        time.Duration
+	SpoolDir        string
+	MaxBatches      int   // 0 = spool default
+	MaxBytes        int64 // 0 = spool default
+	Collectors      []collect.Collector
+	CheckCollectors []collect.CheckCollector
+	EventCollectors []collect.EventCollector
+	Dial            Dialer
+	Now             func() time.Time
+	Log             *slog.Logger
 }
 
 // ValidateInterval reports whether d is inside the allowed range.
@@ -71,24 +73,50 @@ func Run(ctx context.Context, rc RunConfig) error {
 	}
 
 	failing := map[string]bool{} // collector -> currently failing (log once per streak)
+	warnOnce := func(name string, err error) {
+		if !failing[name] {
+			rc.Log.Warn("collector failed; its output is omitted until it recovers", "collector", name, "error", err)
+		}
+		failing[name] = true
+	}
+	recovered := func(name string) {
+		if failing[name] {
+			rc.Log.Info("collector recovered", "collector", name)
+			failing[name] = false
+		}
+	}
 	tick := func() {
 		var samples []collect.Sample
 		for _, c := range rc.Collectors {
 			got, err := c.Collect()
 			if err != nil {
-				if !failing[c.Name()] {
-					rc.Log.Warn("collector failed; its metrics are omitted until it recovers", "collector", c.Name(), "error", err)
-				}
-				failing[c.Name()] = true
+				warnOnce(c.Name(), err)
 				continue
 			}
-			if failing[c.Name()] {
-				rc.Log.Info("collector recovered", "collector", c.Name())
-				failing[c.Name()] = false
-			}
+			recovered(c.Name())
 			samples = append(samples, got...)
 		}
-		batch, skipped, err := BuildBatch(rc.Now(), samples)
+		var checks []collect.Check
+		for _, c := range rc.CheckCollectors {
+			got, err := c.Collect()
+			if err != nil {
+				warnOnce(c.Name(), err)
+				continue
+			}
+			recovered(c.Name())
+			checks = append(checks, got...)
+		}
+		var events []collect.Event
+		for _, c := range rc.EventCollectors {
+			got, err := c.Collect()
+			if err != nil {
+				warnOnce(c.Name(), err)
+				continue
+			}
+			recovered(c.Name())
+			events = append(events, got...)
+		}
+		batch, skipped, err := BuildBatch(rc.Now(), samples, checks, events)
 		if err != nil {
 			rc.Log.Error("could not encode batch", "error", err)
 			return

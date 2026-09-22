@@ -112,6 +112,15 @@ func runAgentLoop(ctx context.Context, args []string) error {
 			collect.Network{Proc: collect.DefaultProc},
 			collect.Load{Proc: collect.DefaultProc},
 			collect.Uptime{Proc: collect.DefaultProc},
+			collect.NewDocker(""),
+		},
+		CheckCollectors: []collect.CheckCollector{
+			collect.NewFail2banStatus(),
+		},
+		EventCollectors: []collect.EventCollector{
+			collect.NewJournald(ctx),
+			collect.NewFail2banEvents(ctx, ""),
+			collect.NewDockerLogs(ctx, ""),
 		},
 		Dial: func(ctx context.Context) (agent.Uplink, error) { return agent.Dial(ctx, cfg) },
 		Log:  slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})),

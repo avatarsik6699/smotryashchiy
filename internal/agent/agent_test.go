@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"math"
+	"net"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -26,7 +27,7 @@ func TestBuildBatchKeepsZerosAndPassesServerValidation(t *testing.T) {
 		{Name: "disk.used_percent", Value: 41.5, Labels: map[string]string{"mount": "/", "device": "/dev/sda1"}},
 		{Name: "load.avg_1m", Value: math.NaN()},
 		{Name: "load.avg_5m", Value: math.Inf(1)},
-	})
+	}, nil, nil)
 	if err != nil || skipped != 2 {
 		t.Fatalf("err = %v, skipped = %d; want the two non-finite samples skipped", err, skipped)
 	}
@@ -47,11 +48,36 @@ func TestBuildBatchKeepsZerosAndPassesServerValidation(t *testing.T) {
 }
 
 func TestBuildBatchWithNothingToSendReturnsNil(t *testing.T) {
-	if raw, _, err := BuildBatch(time.Now(), nil); raw != nil || err != nil {
+	if raw, _, err := BuildBatch(time.Now(), nil, nil, nil); raw != nil || err != nil {
 		t.Fatalf("= %s, %v; an empty tick must not produce a batch", raw, err)
 	}
-	if raw, skipped, _ := BuildBatch(time.Now(), []collect.Sample{{Name: "a.b", Value: math.NaN()}}); raw != nil || skipped != 1 {
+	if raw, skipped, _ := BuildBatch(time.Now(), []collect.Sample{{Name: "a.b", Value: math.NaN()}}, nil, nil); raw != nil || skipped != 1 {
 		t.Fatalf("all-invalid tick = %s, %d", raw, skipped)
+	}
+}
+
+func TestBuildBatchIncludesChecksAndEventsAndPassesServerValidation(t *testing.T) {
+	now := time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC)
+	raw, _, err := BuildBatch(now,
+		[]collect.Sample{{Name: "cpu.usage_percent", Value: 0}},
+		[]collect.Check{{Name: "fail2ban.jail.sshd", Status: "ok", Meta: map[string]any{"banned": 2}}},
+		[]collect.Event{{Level: "warn", Message: "ban 203.0.113.7", Labels: map[string]string{"jail": "sshd"}}},
+	)
+	if err != nil {
+		t.Fatalf("BuildBatch: %v", err)
+	}
+	batch, err := domain.DecodeBatch(raw)
+	if err != nil {
+		t.Fatalf("server decoder rejected the agent batch: %v\n%s", err, raw)
+	}
+	if _, err := batch.Normalize(now); err != nil {
+		t.Fatalf("server validation rejected the agent batch: %v\n%s", err, raw)
+	}
+	if len(batch.Checks) != 1 || batch.Checks[0].Status != "ok" {
+		t.Fatalf("decoded checks = %+v", batch.Checks)
+	}
+	if len(batch.Events) != 1 || batch.Events[0].Message != "ban 203.0.113.7" {
+		t.Fatalf("decoded events = %+v", batch.Events)
 	}
 }
 
@@ -64,7 +90,7 @@ func TestEveryCollectorMetricNameIsValidForTheServer(t *testing.T) {
 		{Name: "load.avg_1m"}, {Name: "load.avg_5m"}, {Name: "load.avg_15m"}, {Name: "uptime.seconds"},
 	}
 	now := time.Now()
-	raw, _, _ := BuildBatch(now, samples)
+	raw, _, _ := BuildBatch(now, samples, nil, nil)
 	batch, err := domain.DecodeBatch(raw)
 	if err == nil {
 		_, err = batch.Normalize(now)
@@ -217,6 +243,30 @@ func TestDialFailureIsRetryableAndKeepsData(t *testing.T) {
 	s := NewSender(sp, func(context.Context) (Uplink, error) { return nil, errors.New("no handshake") }, quiet)
 	if err := s.Drain(context.Background()); err == nil || sp.Len() != 1 {
 		t.Fatalf("err = %v, left %d; a failed dial must keep the batch", err, sp.Len())
+	}
+}
+
+func TestResolveEndpointPassesThroughNumericIPs(t *testing.T) {
+	got, err := resolveEndpoint(context.Background(), "127.0.0.1:51820")
+	if err != nil {
+		t.Fatalf("resolveEndpoint: %v", err)
+	}
+	if got != "127.0.0.1:51820" {
+		t.Fatalf("got %q, want unchanged numeric endpoint", got)
+	}
+}
+
+func TestResolveEndpointResolvesHostnames(t *testing.T) {
+	got, err := resolveEndpoint(context.Background(), "localhost:51820")
+	if err != nil {
+		t.Fatalf("resolveEndpoint: %v", err)
+	}
+	host, _, err := net.SplitHostPort(got)
+	if err != nil {
+		t.Fatalf("SplitHostPort(%q): %v", got, err)
+	}
+	if net.ParseIP(host) == nil {
+		t.Fatalf("got %q, want a numeric host", got)
 	}
 }
 

@@ -52,6 +52,10 @@ printf '%s\n' "$PASSWORD" | go run ./cmd/smotryashchiy admin set-password   # >=
 Other variables (`SMOTRYASHCHIY_ADDR`, `_DB_PATH`, `_PRODUCTION`, `_RELEASE`, `_SECURE_COOKIES`,
 `_TRUSTED_PROXY_CIDRS`) are documented in `internal/platform/config`.
 
+`agent run`'s Docker/journald/fail2ban collectors (docs/SPEC.md §4h) shell out to optional external
+binaries — `journalctl`, `tail`, `fail2ban-client` — and the Docker socket; each one's absence only
+disables that collector for the run, it is never required to build or run the agent.
+
 ## Fast Gate
 
 | Check | Command | Notes |
@@ -106,7 +110,9 @@ internal/platform/   # config, db (migrations), httpserver, apierror
 internal/auth/       # admin password, sessions (domain/application/infrastructure/interfaces)
 internal/transport/  # userspace WireGuard server/client wrappers (keys, peers, tunnel listener)
 internal/agent/      # agent: enroll, persistent tunnel session, sender (retry/backoff), run loop, batch builder
-internal/agent/collect/  # /proc + statfs collectors (cpu, memory/swap, disk, network, load, uptime)
+internal/agent/collect/  # /proc + statfs collectors (cpu, memory/swap, disk, network, load, uptime);
+                         # optional Docker (local socket), journald + Docker log tail, fail2ban
+                         # (log tail + `fail2ban-client`) — each disables itself if unavailable
 internal/agent/spool/    # durable bounded FIFO of unsent batches (offline buffer)
 web/                 # single-page UI (Vite app) + embed.go (go:embed all:dist, static handler, CSP)
 internal/uptime/     # uptime prober: targets (http/tcp/tls), checker, scheduler, results, API (own context, own tables)

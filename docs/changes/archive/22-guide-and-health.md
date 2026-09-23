@@ -9,7 +9,7 @@
 | Change | `22` |
 | Slug | `guide-and-health` |
 | Title | Guide tab, "?" help, health assessment and a summary line |
-| Status | `active` |
+| Status | `archived` |
 | Branch | `feature/22-guide-and-health` |
 
 ---
@@ -117,7 +117,7 @@ only tracks what to build and what's left.
 ## Gate Checks
 
 > Fast Gate runs on every `/work`; Full Gate runs only on `/ship`. All gates are defined in
-> [docs/STACK.md](../STACK.md) — this section only records change-specific overrides.
+> [docs/STACK.md](../../STACK.md) — this section only records change-specific overrides.
 
 Local check before ship, with Playwriter against a dev server fed through `agent push-file`
 (production shape plus edge values: disk 85 %, a stale host, error events):

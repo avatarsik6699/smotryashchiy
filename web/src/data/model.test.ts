@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { CheckDTO, EventDTO, HostDTO, MetricDTO, UptimeResultDTO, UptimeTargetDTO } from '../domain/types'
-import { applyFrame, buildRecords, buildTargets, currentValue, errorsLastHour, hostView, initialState, MAX_EVENTS, networkPoints, seriesKey, type DashboardState } from './model'
+import { applyFrame, buildRecords, buildTargets, currentValue, errorsLastHour, hostView, initialState, isRoutineSshRejection, routineSshRejectionsLastHour, MAX_EVENTS, networkPoints, seriesKey, type DashboardState } from './model'
 
 const NOW = Date.UTC(2026, 8, 21, 12, 0, 0)
 const iso = (offsetSeconds: number) => new Date(NOW + offsetSeconds * 1000).toISOString()
@@ -196,5 +196,36 @@ describe('errorsLastHour', () => {
     for (const e of [ev(1, 'critical'), ev(1, 'warn'), ev(1, 'info')]) state = applyFrame(state, { type: 'event', host_id: 'a', record: e }, NOW).state
     expect(errorsLastHour(state, NOW)).toBe(2)
     expect(errorsLastHour({ ...initialState }, NOW)).toBeNull()
+  })
+})
+
+describe('routine SSH pre-auth rejections (Change 23)', () => {
+  const ev = (unit: string | null, message: string, level: EventDTO['level'] = 'error'): EventDTO => ({
+    host: 'a',
+    ts: new Date(NOW - 60_000).toISOString(),
+    level,
+    message,
+    labels: unit === null ? {} : { unit },
+  })
+  const bot = 'error: maximum authentication attempts exceeded for root from 45.148.10.152 port 43992 ssh2 [preauth]'
+
+  it('recognizes sshd pre-auth lines from any sshd unit name, and nothing else', () => {
+    for (const unit of ['ssh', 'ssh.service', 'sshd', 'sshd.service']) expect(isRoutineSshRejection(ev(unit, bot))).toBe(true)
+    expect(isRoutineSshRejection(ev('ssh.service', bot, 'critical'))).toBe(true)
+    expect(isRoutineSshRejection(ev('ssh.service', 'error: kex_exchange_identification: read: Connection reset'))).toBe(false) // not pre-auth-tagged
+    expect(isRoutineSshRejection(ev('nginx.service', bot))).toBe(false)
+    expect(isRoutineSshRejection(ev(null, bot))).toBe(false)
+    expect(isRoutineSshRejection(ev('ssh.service', bot, 'warn'))).toBe(false) // not an error at all
+  })
+
+  it('counts them apart from real errors', () => {
+    const state: DashboardState = {
+      ...initialState,
+      status: 'ready',
+      errors: [ev('ssh.service', bot), ev('sshd', bot), ev('apt-daily.service', 'Timeout occurred while waiting for network connectivity.')],
+    }
+    expect(errorsLastHour(state, NOW)).toBe(1)
+    expect(routineSshRejectionsLastHour(state, NOW)).toBe(2)
+    expect(routineSshRejectionsLastHour({ ...initialState }, NOW)).toBeNull()
   })
 })

@@ -54,6 +54,15 @@ const EVENTS: EventDTO[] = [
   },
 ];
 
+/** A password-guessing bot refused before login: shown in EVENTS, never counted (Change 23). */
+const SSH_BOT: EventDTO = {
+  host: "b",
+  ts: iso(-120_000),
+  level: "error",
+  message: "error: maximum authentication attempts exceeded for root from 45.148.10.152 port 43992 ssh2 [preauth]",
+  labels: { unit: "ssh.service" },
+};
+
 function json(body: unknown): Response {
   return new Response(JSON.stringify(body), { status: 200 });
 }
@@ -65,7 +74,9 @@ async function mount() {
     if (url.startsWith("/api/metrics"))
       return json({ metrics: url.includes("latest=true") ? LATEST : [] });
     if (url.startsWith("/api/events"))
-      return json({ events: url.includes("level=") ? [] : EVENTS });
+      return json({
+        events: url.includes("level=error") ? [SSH_BOT] : url.includes("level=") ? [] : EVENTS,
+      });
     if (url.startsWith("/api/checks"))
       return json({
         checks: [
@@ -276,5 +287,20 @@ describe("guide", () => {
     await user.click(screen.getByRole("button", { name: "guide" }));
     await screen.findByRole("navigation", { name: "Guide lessons" });
     expect(await axe(container)).toHaveNoViolations();
+  });
+});
+
+describe("routine SSH rejections (Change 23)", () => {
+  it("keeps them out of the error count and names them in the events lesson", async () => {
+    const user = userEvent.setup();
+    await mount();
+    const facts = within(screen.getByRole("status", { name: "Summary" })).getByRole("list", { name: "Based on" });
+    expect(facts).toHaveTextContent("no errors in the last hour");
+    await user.click(screen.getByRole("button", { name: "guide" }));
+    const toc = await screen.findByRole("navigation", { name: "Guide lessons" });
+    await user.click(within(toc).getByRole("button", { name: /Events and log levels/ }));
+    const live = screen.getByRole("region", { name: "Right now on your servers" });
+    expect(live).toHaveTextContent("no errors in the last hour");
+    expect(live).toHaveTextContent("1 SSH login attempt rejected before login ([preauth])");
   });
 });

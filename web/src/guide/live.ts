@@ -6,6 +6,7 @@ import { eventSource } from "../data/events";
 import { fleetSummary, hostHealth, targetHealth } from "../data/health";
 import {
   errorsLastHour,
+  routineSshRejectionsLastHour,
   hostView,
   WINDOW_MS,
   type DashboardState,
@@ -177,6 +178,12 @@ const LIVE: Partial<Record<LessonId, Live>> = {
     const out: Callout[] = [
       { subject: "errors", text: errors.reason, level: errors.level },
     ];
+    const rejected = routineSshRejectionsLastHour(state, now) ?? 0;
+    if (rejected > 0)
+      out.push({
+        subject: "not counted",
+        text: `${rejected} SSH login attempt${rejected === 1 ? "" : "s"} rejected before login ([preauth]) — bots guessing the password; see the fail2ban check`,
+      });
     if (warn.length > 0)
       out.push({
         subject: "warnings",

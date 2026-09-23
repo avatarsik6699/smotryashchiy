@@ -7,7 +7,7 @@
 
 | Field | Value |
 |-------|-------|
-| Document Version | `v1.22` |
+| Document Version | `v1.23` |
 | Date | `2026-09-23` |
 | Architect / Owner | `avatarsik666@gmail.com` |
 | Stack | See [docs/STACK.md](./STACK.md) |
@@ -563,7 +563,14 @@ below change:
 | container memory | ≥ 85 % | ≥ 95 % |
 | check status | `warn` | `critical`, `fail` |
 | uptime target | latency ≥ 1.5 s or TLS ≤ 14 d | `DOWN`, TLS ≤ 7 d or expired |
-| error events in the last hour (`/api/events?level=error`) | ≥ 1 | ≥ 10 |
+| error events in the last hour (`/api/events?level=error`), routine SSH pre-auth rejections excluded (Change 23) | ≥ 1 | ≥ 10 |
+
+Routine SSH pre-auth rejections (Change 23, architect decision 2026-09-23) do not count as
+errors. These are sshd lines from the `ssh`/`sshd` unit that end in `[preauth]`, e.g. `maximum
+authentication attempts exceeded … [preauth]`. Password-guessing bots against a password-login
+host produce them all the time, and `MaxAuthTries` plus fail2ban already handle them; the
+fail2ban check reports `currently_banned`. They still appear in EVENTS with their level, and the
+guide shows how many were set aside.
 
 Network and analytics are explained but never assessed: they have no universal "normal". Missing
 data is `unknown`, which is never assessed as `normal`.

@@ -182,10 +182,31 @@ export function applyFrame(state: DashboardState, frame: StreamFrame, nowMs: num
 
 // ---- selectors -------------------------------------------------------------------------------
 
-/** Error events in the hour before now; null until the dashboard has loaded. */
+const SSH_UNITS = new Set(['ssh', 'ssh.service', 'sshd', 'sshd.service'])
+
+/**
+ * sshd refusing a connection before login (`… [preauth]`): password-guessing bots against a
+ * password-login host, already handled by MaxAuthTries and fail2ban. Shown in EVENTS, but not
+ * counted as an error (docs/SPEC.md §5, Change 23).
+ */
+export function isRoutineSshRejection(e: Pick<EventDTO, 'level' | 'message' | 'labels'>): boolean {
+  return isErrorEvent(e) && SSH_UNITS.has(e.labels.unit ?? '') && e.message.trimEnd().endsWith('[preauth]')
+}
+
+function errorsInWindow(state: Pick<DashboardState, 'errors'>, nowMs: number) {
+  return state.errors.filter((e) => nowMs - Date.parse(e.ts) <= WINDOW_MS)
+}
+
+/** Error events in the hour before now, routine SSH rejections excluded; null until loaded. */
 export function errorsLastHour(state: Pick<DashboardState, 'status' | 'errors'>, nowMs: number): number | null {
   if (state.status !== 'ready') return null
-  return state.errors.filter((e) => nowMs - Date.parse(e.ts) <= WINDOW_MS).length
+  return errorsInWindow(state, nowMs).filter((e) => !isRoutineSshRejection(e)).length
+}
+
+/** Routine SSH pre-auth rejections in the hour before now; null until loaded. */
+export function routineSshRejectionsLastHour(state: Pick<DashboardState, 'status' | 'errors'>, nowMs: number): number | null {
+  if (state.status !== 'ready') return null
+  return errorsInWindow(state, nowMs).filter(isRoutineSshRejection).length
 }
 
 function lastPoint(rec: HostRecord, name: string, labels: Record<string, string> = {}): Point | null {

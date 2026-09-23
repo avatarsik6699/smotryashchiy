@@ -1,0 +1,85 @@
+.trigger {
+  display: inline-grid;
+  width: 18px;
+  height: 18px;
+  margin-left: var(--space-1);
+  padding: 0;
+  place-items: center;
+  border: 1px solid var(--hairline);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.7rem;
+  line-height: 1;
+  text-transform: none;
+  vertical-align: middle;
+  cursor: pointer;
+}
+
+.trigger:hover,
+.trigger[data-popup-open] {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.trigger:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.positioner {
+  z-index: 20;
+}
+
+.popup {
+  width: min(360px, calc(100vw - 32px));
+  padding: var(--space-3);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--raised);
+  color: var(--text);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.title {
+  margin: 0 0 var(--space-1);
+  font-size: 0.8125rem;
+  font-weight: 650;
+}
+
+.text {
+  margin: 0 0 var(--space-1);
+}
+
+.rule {
+  margin: 0 0 var(--space-2);
+  color: var(--text-muted);
+}
+
+.actions {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.action {
+  padding: 4px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.action:hover {
+  border-color: var(--accent);
+}
+
+.action:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}

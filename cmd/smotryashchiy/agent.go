@@ -107,6 +107,7 @@ func runAgentLoop(ctx context.Context, args []string) error {
 		SpoolDir: *spoolDir,
 		Collectors: []collect.Collector{
 			&collect.CPU{Proc: collect.DefaultProc},
+			collect.CPUCount{Proc: collect.DefaultProc},
 			collect.Memory{Proc: collect.DefaultProc},
 			collect.NewDisk(),
 			collect.Network{Proc: collect.DefaultProc},

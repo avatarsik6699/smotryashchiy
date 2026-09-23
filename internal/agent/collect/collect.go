@@ -106,6 +106,29 @@ func (c *CPU) Collect() ([]Sample, error) {
 	return []Sample{{Name: "cpu.usage_percent", Value: clampPercent(100 * (1 - dIdle/dTotal))}}, nil
 }
 
+// CPUCount reports how many CPUs the host has (the `cpuN` lines of /proc/stat). Load average only
+// means something relative to it (docs/SPEC.md §4c, Change 22).
+type CPUCount struct{ Proc Proc }
+
+func (CPUCount) Name() string { return "cpu_count" }
+
+func (c CPUCount) Collect() ([]Sample, error) {
+	raw, err := c.Proc.read("stat")
+	if err != nil {
+		return nil, err
+	}
+	n := 0
+	for _, line := range strings.Split(raw, "\n") {
+		if len(line) > 3 && strings.HasPrefix(line, "cpu") && line[3] >= '0' && line[3] <= '9' {
+			n++
+		}
+	}
+	if n == 0 {
+		return nil, errors.New("collect: no per-CPU lines in /proc/stat")
+	}
+	return []Sample{{Name: "cpu.count", Value: float64(n)}}, nil
+}
+
 // parseCPULine returns the summed jiffies and the idle share (idle + iowait) of the aggregate cpu line.
 func parseCPULine(stat string) (total, idle uint64, err error) {
 	for _, line := range strings.Split(stat, "\n") {

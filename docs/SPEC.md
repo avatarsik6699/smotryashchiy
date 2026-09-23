@@ -7,7 +7,7 @@
 
 | Field | Value |
 |-------|-------|
-| Document Version | `v1.21` |
+| Document Version | `v1.22` |
 | Date | `2026-09-23` |
 | Architect / Owner | `avatarsik666@gmail.com` |
 | Stack | See [docs/STACK.md](./STACK.md) |
@@ -230,6 +230,7 @@ streak; it never emits a fabricated `0` (unknown stays unknown; a *measured* zer
 | `network.rx_bytes_total`, `network.tx_bytes_total` | `interface` | monotonically increasing counters excluding `lo`; consumers derive rates and handle counter resets |
 | `load.avg_1m`, `load.avg_5m`, `load.avg_15m` | — | `/proc/loadavg` |
 | `uptime.seconds` | — | `/proc/uptime` |
+| `cpu.count` | — | number of `cpuN` lines in `/proc/stat`, reported every tick (Change 22); load average is read relative to it |
 
 **Offline buffer.** Every batch is first written to a durable spool (directory, mode `0700`, files
 `0600`, atomic write) together with its own `Idempotency-Key`, then sent oldest-first. A batch leaves
@@ -535,6 +536,38 @@ in the change that introduces them.
 
 ## 5. UI
 
+**Guide, help and health assessment (Change 22, architect decision 2026-09-23).** Several rules
+below change:
+- A third tab, `guide`, joins `monitoring` and `analytics`. It is still local view state: no
+  router and no deep links.
+- The guide is a step-by-step course on reading the dashboard, with 14 lessons from how data
+  flows to a triage checklist. Each lesson shows the live values of the operator's own hosts,
+  judged by the same rules as the dashboard.
+- Every section and block title has a `?` button that opens a popover with a short explanation,
+  the thresholds and a "read the lesson" link to the matching guide lesson.
+- Values are assessed as `normal` / `watch` / `problem` against the fixed thresholds below. The
+  assessment is always written as text next to the color, never color alone. It is an
+  assessment, not alerting: nothing is sent anywhere, and alerting stays deferred (§7).
+- A summary line opens the Monitoring view. It names the worst level first, followed by the
+  facts behind it: hosts reporting, uptime targets up and their latency, the fullest disk, and
+  errors in the last hour.
+
+| Signal | watch | problem |
+|---|---|---|
+| host freshness | `STALE` | `OFFLINE` |
+| CPU (mean of the last 5 min) | ≥ 80 % | ≥ 95 % |
+| memory | ≥ 85 % | ≥ 95 % |
+| swap | ≥ 25 % | ≥ 60 % |
+| disk (fullest mount) | ≥ 80 % | ≥ 90 % |
+| load 5m per CPU (`cpu.count`; unknown without it) | ≥ 1.0 | ≥ 2.0 |
+| container memory | ≥ 85 % | ≥ 95 % |
+| check status | `warn` | `critical`, `fail` |
+| uptime target | latency ≥ 1.5 s or TLS ≤ 14 d | `DOWN`, TLS ≤ 7 d or expired |
+| error events in the last hour (`/api/events?level=error`) | ≥ 1 | ≥ 10 |
+
+Network and analytics are explained but never assessed: they have no universal "normal". Missing
+data is `unknown`, which is never assessed as `normal`.
+
 **Two views, minimal navigation (Changes 14–15, architect decision 2026-09-22, supersedes the
 original "one page, no navigation" rule):** the original single-page design had no navigation by
 intent, but Site analytics (§4i) is a genuinely different domain — visitor/page/referrer breakdowns,
@@ -600,7 +633,8 @@ next to the status (e.g. `currently_banned=5`), same muted-text treatment as an 
 
 Rules: host state is derived from freshness only (`OK` ≤ 45 s since `last_seen_at`, `STALE` ≤ 5 min,
 `OFFLINE` beyond, `NEW` when never seen) and is always textual; missing data renders `—`, never `0`;
-no threshold colors (alerting is deferred). Design baseline: `docs/reference/DESIGN.md` tokens (near-black
+threshold colors are limited to the Change 22 assessment above and always come with text
+(alerting is deferred). Design baseline: `docs/reference/DESIGN.md` tokens (near-black
 canvas, one mono stack, 2 px radius, hairlines, no shadows), following `prefers-color-scheme` with dark as
 the default. Every chart has a textual alternative; keyboard use and narrow widths (rows stack ≤ 900 px)
 are first-class; WCAG 2.2 AA.

@@ -153,3 +153,33 @@
 .check[data-status='ok'] {
   color: var(--text-muted);
 }
+
+/* Change 22: chart and block titles with "?" help, and the assessed current values. */
+.blockHead {
+  display: flex;
+  align-items: center;
+  margin: 0 0 var(--space-1);
+}
+
+.blockHead > .blockTitle {
+  margin: 0;
+}
+
+.chartBlock {
+  min-width: 0;
+}
+
+.now {
+  display: block;
+  margin: 0 0 4px;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.indicator[data-level='watch'] {
+  background: var(--status-warn);
+}
+
+.indicator[data-level='problem'] {
+  background: var(--status-critical);
+}

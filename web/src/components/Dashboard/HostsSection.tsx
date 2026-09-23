@@ -2,6 +2,7 @@ import { Accordion } from '@base-ui/react/accordion'
 import type { HostRecord } from '../../data/model'
 import { HostRow } from './HostRow'
 import type { HostEntry } from './StatusStrip'
+import { HelpButton } from '../Help/HelpButton'
 import shared from './Dashboard.module.css'
 import styles from './HostsSection.module.css'
 
@@ -16,9 +17,12 @@ interface HostsSectionProps {
 export function HostsSection({ entries, records, now, onAddHost }: HostsSectionProps) {
   return (
     <section className={shared.section} aria-labelledby="hosts-title">
-      <h2 id="hosts-title" className={shared.sectionTitle}>
-        Hosts
-      </h2>
+      <div className={shared.titleRow}>
+        <h2 id="hosts-title" className={shared.sectionTitle}>
+          Hosts
+        </h2>
+        <HelpButton lesson="status" topic="a host row" />
+      </div>
       {entries.length === 0 ? (
         <p className={shared.notice}>
           No hosts yet.{' '}

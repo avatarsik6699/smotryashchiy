@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { CheckDTO, EventDTO, HostDTO, MetricDTO, UptimeResultDTO, UptimeTargetDTO } from '../domain/types'
-import { applyFrame, buildRecords, buildTargets, currentValue, hostView, initialState, MAX_EVENTS, networkPoints, seriesKey, type DashboardState } from './model'
+import { applyFrame, buildRecords, buildTargets, currentValue, errorsLastHour, hostView, initialState, MAX_EVENTS, networkPoints, seriesKey, type DashboardState } from './model'
 
 const NOW = Date.UTC(2026, 8, 21, 12, 0, 0)
 const iso = (offsetSeconds: number) => new Date(NOW + offsetSeconds * 1000).toISOString()
@@ -186,5 +186,15 @@ describe('uptime targets', () => {
     const start = withTargets([dto({ latency: [[NOW - 4000_000, 1], [NOW - 10_000, 2]] })])
     const { state } = applyFrame(start, { type: 'uptime', target_id: 't1', record: result(0, true, 3) }, NOW)
     expect(state.targets[0]!.latency.map((p) => p.v)).toEqual([2, 3])
+  })
+})
+
+describe('errorsLastHour', () => {
+  it('counts error and critical events from the load and live frames within the hour', () => {
+    const ev = (minutesAgo: number, level: EventDTO['level']): EventDTO => ({ host: 'a', ts: new Date(NOW - minutesAgo * 60_000).toISOString(), level, message: level, labels: {} })
+    let state: DashboardState = { ...initialState, status: 'ready', errors: [ev(30, 'error'), ev(90, 'error')] }
+    for (const e of [ev(1, 'critical'), ev(1, 'warn'), ev(1, 'info')]) state = applyFrame(state, { type: 'event', host_id: 'a', record: e }, NOW).state
+    expect(errorsLastHour(state, NOW)).toBe(2)
+    expect(errorsLastHour({ ...initialState }, NOW)).toBeNull()
   })
 })

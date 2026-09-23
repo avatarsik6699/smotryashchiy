@@ -232,3 +232,17 @@ func TestRealProcIsReadableOnLinux(t *testing.T) {
 		}
 	}
 }
+
+func TestCPUCountCountsPerCoreLinesOnEveryTick(t *testing.T) {
+	proc := procTree(t, map[string]string{"stat": "cpu  1 0 1 9 0 0 0 0 0 0\ncpu0 1 0 1 5 0 0 0 0 0 0\ncpu1 0 0 0 4 0 0 0 0 0 0\ncpu10 0 0 0 1 0 0 0 0 0 0\nintr 12 0\nctxt 4\n"})
+	c := CPUCount{Proc: proc}
+	for tick := 0; tick < 2; tick++ { // not a delta: the first tick already reports it
+		s, err := c.Collect()
+		if err != nil || len(s) != 1 || s[0].Name != "cpu.count" || s[0].Value != 3 {
+			t.Fatalf("tick %d = %v, %v; want cpu.count 3", tick, s, err)
+		}
+	}
+	if s, err := (CPUCount{Proc: procTree(t, map[string]string{"stat": "cpu  1 0 1 9\nintr 1\n"})}).Collect(); err == nil || len(s) != 0 {
+		t.Fatalf("no per-core lines = %v, %v; want an error, never a count of 0", s, err)
+	}
+}

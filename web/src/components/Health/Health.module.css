@@ -1,0 +1,24 @@
+/* Assessment tones (docs/SPEC.md §5, Change 22): color always comes with the level as text. */
+.tone[data-level='watch'] {
+  color: var(--status-warn);
+}
+
+.tone[data-level='problem'] {
+  color: var(--status-critical);
+}
+
+.mark {
+  margin-left: 0.4em;
+  font-size: 0.7rem;
+  font-weight: 400;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.mark[data-level='watch'] {
+  color: var(--status-warn);
+}
+
+.mark[data-level='problem'] {
+  color: var(--status-critical);
+}

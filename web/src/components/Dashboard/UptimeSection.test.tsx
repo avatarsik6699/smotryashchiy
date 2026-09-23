@@ -126,7 +126,7 @@ describe('UPTIME ledger', () => {
   it('counts up and down probes in the STATUS strip, leaving unknown ones out of both', async () => {
     await mount()
     const strip = screen.getByRole('region', { name: 'Status' })
-    const value = (label: string) => within(strip).getByText(label, { selector: 'dt' }).nextElementSibling!.textContent
+    const value = (label: string) => within(strip).getByText(label, { selector: 'dt' }).nextElementSibling!.firstChild!.textContent
     expect(value('probes up')).toBe('1')
     expect(value('probes down')).toBe('1') // STALE and NEW count in neither
   })

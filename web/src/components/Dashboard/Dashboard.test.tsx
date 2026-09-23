@@ -158,11 +158,14 @@ describe('STATUS strip', () => {
   it('counts hosts by freshness state and averages only known values', async () => {
     await mount()
     const strip = screen.getByRole('region', { name: 'Status' })
-    const value = (label: string) => within(strip).getByText(label, { selector: 'dt' }).nextElementSibling!.textContent
+    const value = (label: string) => within(strip).getByText(label, { selector: 'dt' }).nextElementSibling!.firstChild!.textContent
     expect(value('hosts')).toBe('4')
     expect(value('ok')).toBe('1')
     expect(value('stale')).toBe('1')
     expect(value('offline')).toBe('1')
+    // A bad state that is present is itself a finding, written out (Change 22).
+    expect(within(strip).getByText('stale', { selector: 'dt' }).nextElementSibling).toHaveTextContent('watch')
+    expect(within(strip).getByText('offline', { selector: 'dt' }).nextElementSibling).toHaveTextContent('problem')
     expect(value('new')).toBe('1')
     // vps-a 37.4 and vps-b 0 are known; vps-c's hour-old value and vps-d's nothing are excluded.
     expect(value('avg cpu')).toBe('19%')
@@ -227,13 +230,19 @@ describe('HOSTS ledger', () => {
     await mount()
     await user.tab() // monitoring tab
     await user.tab() // analytics tab
+    await user.tab() // guide tab
     await user.tab() // add host
     await user.tab() // logout
+    await user.tab() // summary line "?"
+    await user.tab() // STATUS "?"
+    await user.tab() // HOSTS "?"
     await user.tab() // first row
     expect(row('vps-a')).toHaveFocus()
     await user.keyboard('{Enter}')
     expect(row('vps-a')).toHaveAttribute('aria-expanded', 'true')
-    await user.tab() // Base UI 1.8: rows are ordinary tab stops (arrow keys no longer move focus)
+    // Base UI 1.8: rows are ordinary tab stops; the open row's "?" buttons come before the next row.
+    await user.keyboard('{Enter}')
+    await user.tab()
     expect(row('vps-b')).toHaveFocus()
     await user.keyboard(' ')
     await waitFor(() => expect(row('vps-b')).toHaveAttribute('aria-expanded', 'true'))

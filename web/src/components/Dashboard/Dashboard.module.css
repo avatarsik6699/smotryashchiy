@@ -80,3 +80,14 @@
   background: linear-gradient(90deg, var(--raised), transparent);
   opacity: 0.6;
 }
+
+/* A section title with its "?" help next to it (Change 22); the heading text stays the title. */
+.titleRow {
+  display: flex;
+  align-items: center;
+  margin: 0 0 var(--space-2);
+}
+
+.titleRow > .sectionTitle {
+  margin: 0;
+}

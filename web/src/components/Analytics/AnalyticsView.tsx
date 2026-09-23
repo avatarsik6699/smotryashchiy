@@ -1,6 +1,7 @@
 import { Accordion } from '@base-ui/react/accordion'
 import type { SiteDTO } from '../../domain/types'
 import shared from '../Dashboard/Dashboard.module.css'
+import { HelpButton } from '../Help/HelpButton'
 import { SiteRow } from './SiteRow'
 import styles from './AnalyticsView.module.css'
 
@@ -30,9 +31,12 @@ export function AnalyticsView({ status, error, sites, onAddSite }: AnalyticsView
       )}
       {status === 'ready' && (
         <section className={shared.section} aria-labelledby="sites-title">
-          <h2 id="sites-title" className={shared.sectionTitle}>
-            Sites
-          </h2>
+          <div className={shared.titleRow}>
+            <h2 id="sites-title" className={shared.sectionTitle}>
+              Sites
+            </h2>
+            <HelpButton lesson="analytics" topic="site analytics" />
+          </div>
           {sites.length === 0 ? (
             <p className={shared.notice}>
               No sites yet.{' '}

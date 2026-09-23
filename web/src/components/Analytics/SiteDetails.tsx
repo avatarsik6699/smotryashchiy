@@ -1,6 +1,7 @@
 import { useId, useState } from 'react'
 import { useSiteStats } from '../../data/useSiteStats'
 import type { SiteDTO, StatsRange } from '../../domain/types'
+import { HelpButton } from '../Help/HelpButton'
 import styles from './SiteDetails.module.css'
 
 const RANGES: { value: StatsRange; label: string }[] = [
@@ -63,7 +64,10 @@ export function SiteDetails({ site }: SiteDetailsProps) {
 
           <div className={styles.tables}>
             <section className={styles.block} aria-label="Top pages">
-              <h3 className={styles.blockTitle}>Top pages</h3>
+              <div className={styles.blockHead}>
+                <h3 className={styles.blockTitle}>Top pages</h3>
+                <HelpButton lesson="analytics" topic="top pages" />
+              </div>
               {data.stats.top_pages.length === 0 ? (
                 <p className={styles.muted}>no data</p>
               ) : (
@@ -79,7 +83,10 @@ export function SiteDetails({ site }: SiteDetailsProps) {
             </section>
 
             <section className={styles.block} aria-label="Top referrers">
-              <h3 className={styles.blockTitle}>Top referrers</h3>
+              <div className={styles.blockHead}>
+                <h3 className={styles.blockTitle}>Top referrers</h3>
+                <HelpButton lesson="analytics" topic="top referrers" />
+              </div>
               {data.stats.top_referrers.length === 0 ? (
                 <p className={styles.muted}>no data</p>
               ) : (

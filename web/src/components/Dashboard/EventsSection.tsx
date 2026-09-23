@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 import { eventSource, eventSources } from '../../data/events'
 import { formatClock } from '../../domain/format'
 import type { EventDTO } from '../../domain/types'
+import { HelpButton } from '../Help/HelpButton'
 import shared from './Dashboard.module.css'
 import styles from './EventsSection.module.css'
 
@@ -26,9 +27,12 @@ export function EventsSection({ events, hostNames }: EventsSectionProps) {
   return (
     <section className={shared.section} aria-labelledby="events-title">
       <div className={styles.header}>
-        <h2 id="events-title" className={shared.sectionTitle}>
-          Events
-        </h2>
+        <div className={shared.titleRow}>
+          <h2 id="events-title" className={shared.sectionTitle}>
+            Events
+          </h2>
+          <HelpButton lesson="events" topic="events" />
+        </div>
         {sources.length > 0 && (
           <Select.Root items={items} value={source} onValueChange={setSource}>
             <Select.Trigger className={styles.filterTrigger} aria-label="Filter events by source">

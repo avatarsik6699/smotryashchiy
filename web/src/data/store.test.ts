@@ -31,6 +31,21 @@ afterEach(() => {
 })
 
 describe('DashboardStore.load', () => {
+  it('loads error and critical events for the last-hour error count (Change 22)', async () => {
+    const ev = (ts: string, level: string) => ({ host: 'a', ts, level, message: level, labels: {} })
+    routeAll({
+      '/api/events?level=error': () => ok({ events: [ev('2026-09-21T11:50:00Z', 'error'), ev('2026-09-21T10:00:00Z', 'error')] }),
+      '/api/events?level=critical': () => ok({ events: [ev('2026-09-21T11:55:00Z', 'critical')] }),
+    })
+    const store = new DashboardStore(() => NOW)
+    await store.load()
+    expect(store.getSnapshot().errors.map((e) => e.level + ' ' + e.ts)).toEqual([
+      'critical 2026-09-21T11:55:00Z',
+      'error 2026-09-21T11:50:00Z',
+      'error 2026-09-21T10:00:00Z',
+    ])
+  })
+
   it('requests hosts, latest, one stepped history per catalog metric, events and checks', async () => {
     routeAll()
     const store = new DashboardStore(() => NOW)

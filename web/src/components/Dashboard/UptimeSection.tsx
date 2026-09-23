@@ -6,6 +6,9 @@ import { useStore } from '../../data/DashboardContext'
 import { formatAge, formatLatency, UNKNOWN } from '../../domain/format'
 import { tlsDaysLeft, tlsLabel, TLS_WARN_DAYS, uptimeState, UPTIME_STATE_LABEL } from '../../domain/uptime'
 import { Chart } from '../Chart/Chart'
+import { targetHealth } from '../../data/health'
+import { HelpButton } from '../Help/HelpButton'
+import { LevelMark } from '../Health/LevelMark'
 import shared from './Dashboard.module.css'
 import styles from './UptimeSection.module.css'
 
@@ -19,9 +22,12 @@ export function UptimeSection({ targets, now, onAdd }: UptimeSectionProps) {
   return (
     <section className={shared.section} aria-labelledby="uptime-title">
       <div className={styles.head}>
-        <h2 id="uptime-title" className={shared.sectionTitle}>
-          Uptime
-        </h2>
+        <div className={shared.titleRow}>
+          <h2 id="uptime-title" className={shared.sectionTitle}>
+            Uptime
+          </h2>
+          <HelpButton lesson="uptime" topic="uptime" />
+        </div>
         <Button className={shared.button} onClick={onAdd}>
           + add target
         </Button>
@@ -51,6 +57,7 @@ function UptimeRow({ record, now }: { record: UptimeRecord; now: number }) {
   const points = record.latency.filter((p): p is { t: number; v: number } => p.v !== null)
   const gaps = record.latency.filter((p) => p.v === null).map((p) => p.t)
   const latency = last?.latency_ms ?? null
+  const health = targetHealth(record, now)
 
   async function confirmRemove() {
     setRemove({ phase: 'removing' })
@@ -74,6 +81,7 @@ function UptimeRow({ record, now }: { record: UptimeRecord; now: number }) {
           {target.kind} {target.target}
         </span>
         {state === 'down' && last && <span className={styles.error}>{last.error || 'check failed'}</span>}
+        {state !== 'down' && <LevelMark assessment={health} />}
       </span>
       <span className={styles.latency}>
         <span className={styles.latencyHead}>

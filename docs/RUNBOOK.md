@@ -112,7 +112,7 @@ with the data.
 The agent is the same binary as the server. On each monitored host:
 
 ```bash
-v=v0.2.5; cd /tmp
+v=v0.2.6; cd /tmp
 curl -fsSLO "https://github.com/avatarsik6699/smotryashchiy/releases/download/$v/smotryashchiy-linux-amd64"
 curl -fsSLO "https://github.com/avatarsik6699/smotryashchiy/releases/download/$v/SHA256SUMS"
 sha256sum --ignore-missing -c SHA256SUMS
@@ -121,7 +121,8 @@ install -m 755 smotryashchiy-linux-amd64 /usr/local/bin/smotryashchiy
 systemctl restart smotryashchiy-agent && /usr/local/bin/smotryashchiy version
 ```
 
-The host row must turn `OK` again within a minute. Remove the `.bak` once the new agent has run
+The host row must turn `OK` again within a minute. Agents before v0.2.6 do not report `cpu.count`,
+so the dashboard cannot judge their load (it shows `load … CPU count unknown`); update them. Remove the `.bak` once the new agent has run
 cleanly; restore it and restart the unit to roll back.
 
 ## Host hygiene

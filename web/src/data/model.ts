@@ -13,6 +13,14 @@ export const HISTORY_METRICS = [
 
 export const WINDOW_MS = 60 * 60_000
 export const MAX_EVENTS = 50
+/** Error events kept for the health summary: one hour, at most this many (docs/SPEC.md §5, Change 22). */
+export const MAX_ERROR_EVENTS = 500
+/** Event levels that count as errors in the assessment. */
+export const ERROR_LEVELS = ['error', 'critical'] as const
+
+export function isErrorEvent(e: Pick<EventDTO, 'level'>): boolean {
+  return (ERROR_LEVELS as readonly string[]).includes(e.level)
+}
 
 export interface Series {
   name: string
@@ -50,10 +58,12 @@ export interface DashboardState {
   hosts: HostRecord[]
   targets: UptimeRecord[]
   events: EventDTO[]
+  /** Error and critical events of about the last hour, newest first (Change 22 assessment). */
+  errors: EventDTO[]
   connection: ConnectionState
 }
 
-export const initialState: DashboardState = { status: 'loading', error: null, hosts: [], targets: [], events: [], connection: 'connecting' }
+export const initialState: DashboardState = { status: 'loading', error: null, hosts: [], targets: [], events: [], errors: [], connection: 'connecting' }
 
 export function seriesKey(name: string, labels: Record<string, string>): string {
   const parts = Object.keys(labels)
@@ -141,7 +151,8 @@ export function applyFrame(state: DashboardState, frame: StreamFrame, nowMs: num
   }
   if (frame.type === 'event') {
     const event = frame.record as EventDTO
-    return { state: { ...state, events: [event, ...state.events].slice(0, MAX_EVENTS) }, unknownHost: false }
+    const errors = isErrorEvent(event) ? [event, ...state.errors].slice(0, MAX_ERROR_EVENTS) : state.errors
+    return { state: { ...state, events: [event, ...state.events].slice(0, MAX_EVENTS), errors }, unknownHost: false }
   }
   const index = state.hosts.findIndex((h) => h.host.id === frame.host_id)
   if (index < 0) return { state, unknownHost: true }
@@ -170,6 +181,12 @@ export function applyFrame(state: DashboardState, frame: StreamFrame, nowMs: num
 }
 
 // ---- selectors -------------------------------------------------------------------------------
+
+/** Error events in the hour before now; null until the dashboard has loaded. */
+export function errorsLastHour(state: Pick<DashboardState, 'status' | 'errors'>, nowMs: number): number | null {
+  if (state.status !== 'ready') return null
+  return state.errors.filter((e) => nowMs - Date.parse(e.ts) <= WINDOW_MS).length
+}
 
 function lastPoint(rec: HostRecord, name: string, labels: Record<string, string> = {}): Point | null {
   const s = rec.series.get(seriesKey(name, labels))

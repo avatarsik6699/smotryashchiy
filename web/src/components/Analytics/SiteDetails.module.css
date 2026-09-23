@@ -121,3 +121,13 @@
 .muted {
   color: var(--text-muted);
 }
+
+.blockHead {
+  display: flex;
+  align-items: center;
+  margin: 0 0 var(--space-1);
+}
+
+.blockHead > .blockTitle {
+  margin: 0;
+}

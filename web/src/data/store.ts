@@ -6,6 +6,9 @@ import {
   buildTargets,
   HISTORY_METRICS,
   initialState,
+  ERROR_LEVELS,
+  isErrorEvent,
+  MAX_ERROR_EVENTS,
   MAX_EVENTS,
   WINDOW_MS,
   type ConnectionState,
@@ -70,10 +73,11 @@ export class DashboardStore {
   private async doLoad(): Promise<void> {
     const from = new Date(this.now() - WINDOW_MS).toISOString()
     try {
-      const [hosts, latest, events, checks, uptime, ...history] = await Promise.all([
+      const [hosts, latest, events, errorLists, checks, uptime, ...history] = await Promise.all([
         api<{ hosts: HostDTO[] }>('/api/hosts'),
         api<{ metrics: MetricDTO[] }>(`/api/metrics?latest=true&limit=${METRIC_LIMIT}`),
         api<{ events: EventDTO[] }>(`/api/events?limit=${MAX_EVENTS}`),
+        Promise.all(ERROR_LEVELS.map((level) => api<{ events: EventDTO[] }>(`/api/events?level=${level}&limit=${MAX_ERROR_EVENTS}`))),
         api<{ checks: CheckDTO[] }>('/api/checks'),
         api<{ targets: UptimeTargetDTO[] }>('/api/uptime'),
         ...HISTORY_METRICS.map((name) =>
@@ -87,6 +91,11 @@ export class DashboardStore {
         hosts: buildRecords({ hosts: hosts.hosts, latest: latest.metrics, history: history.flatMap((h) => h.metrics), events: events.events, checks: checks.checks }),
         targets: buildTargets(uptime.targets),
         events: events.events,
+        errors: errorLists
+          .flatMap((l) => l.events)
+          .filter(isErrorEvent)
+          .sort((a, b) => Date.parse(b.ts) - Date.parse(a.ts))
+          .slice(0, MAX_ERROR_EVENTS),
       })
     } catch (e) {
       const message = e instanceof Error ? e.message : 'load failed'

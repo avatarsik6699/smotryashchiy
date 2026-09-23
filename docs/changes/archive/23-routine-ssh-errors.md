@@ -9,7 +9,7 @@
 | Change | `23` |
 | Slug | `routine-ssh-errors` |
 | Title | Routine SSH pre-auth rejections do not count as errors |
-| Status | `active` |
+| Status | `archived` |
 | Branch | `feature/23-routine-ssh-errors` |
 
 ---
@@ -80,7 +80,7 @@ tracks what to build and what's left.
 ## Gate Checks
 
 > Fast Gate runs on every `/work`; Full Gate runs only on `/ship`. All gates are defined in
-> [docs/STACK.md](../STACK.md) — this section only records change-specific overrides.
+> [docs/STACK.md](../../STACK.md) — this section only records change-specific overrides.
 
 After release: the server runs v0.2.7; agents are unchanged. On production, the summary no longer
 counts sshd `[preauth]` lines, and the events lesson shows how many were set aside.

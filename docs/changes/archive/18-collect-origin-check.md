@@ -9,7 +9,7 @@
 | Change | `18` |
 | Slug | `collect-origin-check` |
 | Title | Store a beacon only from the site's own origin |
-| Status | `active` |
+| Status | `archived` |
 | Branch | `feature/18-collect-origin-check` |
 
 ---

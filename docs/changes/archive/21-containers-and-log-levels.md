@@ -9,7 +9,7 @@
 | Change | `21` |
 | Slug | `containers-and-log-levels` |
 | Title | Current containers only, and server logs at their real level |
-| Status | `active` |
+| Status | `archived` |
 | Branch | `feature/21-containers-and-log-levels` |
 
 ---
@@ -100,7 +100,7 @@ only tracks what to build and what's left.
 ## Gate Checks
 
 > Fast Gate runs on every `/work`; Full Gate runs only on `/ship`. All gates are defined in
-> [docs/STACK.md](../STACK.md) — this section only records change-specific overrides.
+> [docs/STACK.md](../../STACK.md) — this section only records change-specific overrides.
 
 After the release, update the `infraege-prod` agent (v0.2.3) and the `sre-monitoring` agent to
 v0.2.5 per `docs/RUNBOOK.md` "Updating an agent", so the fleet runs one version. Then: the

@@ -9,7 +9,7 @@
 | Change | `16` |
 | Slug | `track-url-dedupe` |
 | Title | Count a pageview per URL change, not per history call |
-| Status | `active` |
+| Status | `archived` |
 | Branch | `feature/16-track-url-dedupe` |
 
 ---

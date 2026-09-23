@@ -7,8 +7,8 @@
 
 | Field | Value |
 |-------|-------|
-| Document Version | `v1.15` |
-| Date | `2026-09-22` |
+| Document Version | `v1.16` |
+| Date | `2026-09-23` |
 | Architect / Owner | `avatarsik666@gmail.com` |
 | Stack | See [docs/STACK.md](./STACK.md) |
 | Domain | Self-contained self-hosted monitoring for solo developers and small teams |
@@ -430,7 +430,11 @@ crawlers execute JavaScript).
 
 **Tracking snippet** (`GET /track.js`, served by the app, no build step for the tracked site):
 listens for `pushState`/`replaceState`/`popstate` in addition to the initial load, so a
-client-side-routed page change is its own pageview — the entire reason this change exists.
+client-side-routed page change is its own pageview — the entire reason this change exists. A
+pageview is a change of `pathname + search`, not a history call: the snippet remembers the last
+URL it sent and ignores any history call that leaves it unchanged (Change 16). Client routers call
+`replaceState` with the same URL on hydration and for scroll/state bookkeeping — found live on a
+TanStack Router site, where every load counted twice. A hash-only change is not a pageview either.
 
 **Storage.** `sites (id, name, domain, created_at)`. `pageviews (id, site_id, ts, path,
 referrer_domain, visitor_hash, browser, os, device)`, raw TTL shared with §4.5

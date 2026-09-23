@@ -257,6 +257,20 @@ Carry these into the first contract tests instead of rediscovering them in produ
   per stream (stdout and stderr buffered separately) to prepend on the next frame
   (`internal/agent/collect/docker_logs.go`'s `demuxDockerLogStream`).
 
+### A history call is not a pageview: client routers call `replaceState` with the same URL
+
+- **Symptoms**: a tracked SPA records two pageviews per page load. Found live on infraege.ru
+  (TanStack Router): one `GET /track.js`, two `POST /api/collect`.
+- **Root cause**: the router calls `history.replaceState` once during hydration without changing
+  the URL. Routers also call it for scroll and state bookkeeping, and some pass no URL at all. A
+  snippet that sends on every `pushState`/`replaceState` counts each of these calls.
+- **Fix**: `track.js` sends only when `pathname + search` differs from the last URL it sent
+  (Change 16). `track_test.go` runs the served snippet under Node and covers same-URL,
+  state-only and hash-only calls.
+- **Verify on a real page**: count network requests, not DOM nodes. TanStack Router's head
+  `Script` asset removes its `<script>` node right after hydration, after the deferred script has
+  already run. A DOM query for the tag therefore reports it missing even though tracking works.
+
 ### Docker-owned files break host operations (`EACCES` / `EPERM` / read-only)
 
 - **Symptoms**: file operations fail with `EACCES`, `EPERM`, "Permission denied" or

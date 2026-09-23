@@ -52,7 +52,7 @@ func TestCollectStoresAValidBeacon(t *testing.T) {
 	repo.sites["infraege.ru"] = domain.Site{ID: "infraege.ru", Name: "Infraege", Domain: "infraege.ru", CreatedAt: now}
 	svc := NewService(repo, func() time.Time { return now }, Options{})
 
-	stored, err := svc.Collect(context.Background(), domain.Beacon{Site: "infraege.ru", URL: "/docs", Referrer: "https://google.com/search?q=x"}, "203.0.113.5", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0")
+	stored, err := svc.Collect(context.Background(), domain.Beacon{Site: "infraege.ru", URL: "/docs", Referrer: "https://google.com/search?q=x"}, "203.0.113.5", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0", "infraege.ru")
 	if err != nil || !stored {
 		t.Fatalf("Collect: stored=%v err=%v", stored, err)
 	}
@@ -71,7 +71,7 @@ func TestCollectStoresAValidBeacon(t *testing.T) {
 func TestCollectDropsUnknownSiteWithoutStoringOrErroring(t *testing.T) {
 	repo := newFakeRepo()
 	svc := NewService(repo, time.Now, Options{})
-	stored, err := svc.Collect(context.Background(), domain.Beacon{Site: "no-such-site", URL: "/"}, "1.2.3.4", "Mozilla/5.0")
+	stored, err := svc.Collect(context.Background(), domain.Beacon{Site: "no-such-site", URL: "/"}, "1.2.3.4", "Mozilla/5.0", "no-such-site")
 	if err != nil {
 		t.Fatalf("Collect returned an error for an unknown site: %v", err)
 	}
@@ -94,13 +94,47 @@ func TestCollectDropsKnownBotUserAgents(t *testing.T) {
 		"Mozilla/5.0 (compatible; AhrefsBot/7.0)",
 	}
 	for _, ua := range bots {
-		stored, err := svc.Collect(context.Background(), domain.Beacon{Site: "s", URL: "/"}, "1.2.3.4", ua)
+		stored, err := svc.Collect(context.Background(), domain.Beacon{Site: "s", URL: "/"}, "1.2.3.4", ua, "s")
 		if err != nil {
 			t.Fatalf("Collect(%q): %v", ua, err)
 		}
 		if stored {
 			t.Fatalf("Collect(%q): want a bot User-Agent dropped", ua)
 		}
+	}
+}
+
+// A tracked site's own local, CI and Lighthouse runs load the snippet from localhost/127.x; only
+// beacons from the site's own origin count (docs/SPEC.md §4i).
+func TestCollectStoresOnlyBeaconsFromTheSitesOwnOrigin(t *testing.T) {
+	const ua = "Mozilla/5.0 (Linux; Android 11) AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36"
+	cases := []struct {
+		origin string
+		stored bool
+	}{
+		{"infraege.ru", true},
+		{"INFRAEGE.RU", true},
+		{"www.infraege.ru", true},
+		{"localhost", false},
+		{"127.0.0.2", false},
+		{"evil.example", false},
+		{"sub.infraege.ru", false},
+		{"infraege.ru.evil.example", false},
+		{"", false},
+	}
+	for _, c := range cases {
+		t.Run(c.origin, func(t *testing.T) {
+			repo := newFakeRepo()
+			repo.sites["id1"] = domain.Site{ID: "id1", Domain: "infraege.ru"}
+			svc := NewService(repo, time.Now, Options{})
+			stored, err := svc.Collect(context.Background(), domain.Beacon{Site: "id1", URL: "/"}, "1.2.3.4", ua, c.origin)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if stored != c.stored || len(repo.pageviews) != map[bool]int{true: 1, false: 0}[c.stored] {
+				t.Fatalf("origin %q: stored=%v pageviews=%d, want stored=%v", c.origin, stored, len(repo.pageviews), c.stored)
+			}
+		})
 	}
 }
 

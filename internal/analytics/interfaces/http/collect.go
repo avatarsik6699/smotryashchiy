@@ -59,7 +59,7 @@ func (h *CollectHandlers) collect(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	_, _ = h.service.Collect(r.Context(), b, ip, r.UserAgent())
+	_, _ = h.service.Collect(r.Context(), b, ip, r.UserAgent(), originHostname(r))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -67,12 +67,8 @@ func (h *CollectHandlers) collect(w http.ResponseWriter, r *http.Request) {
 // registered site's domain — not a security boundary (a non-browser client ignores CORS
 // entirely), just keeps a legitimate embed's fetch fallback console-clean.
 func (h *CollectHandlers) setCORS(w http.ResponseWriter, r *http.Request) {
-	origin := r.Header.Get("Origin")
-	if origin == "" {
-		return
-	}
-	u, err := url.Parse(origin)
-	if err != nil || u.Hostname() == "" {
+	host := originHostname(r)
+	if host == "" {
 		return
 	}
 	sites, err := h.service.Sites(r.Context())
@@ -80,12 +76,21 @@ func (h *CollectHandlers) setCORS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, site := range sites {
-		if strings.EqualFold(site.Domain, u.Hostname()) {
-			w.Header().Set("Access-Control-Allow-Origin", origin)
+		if strings.EqualFold(site.Domain, host) {
+			w.Header().Set("Access-Control-Allow-Origin", r.Header.Get("Origin"))
 			w.Header().Set("Vary", "Origin")
 			return
 		}
 	}
+}
+
+// originHostname is the request Origin's hostname, or "" when absent, "null" or unparsable.
+func originHostname(r *http.Request) string {
+	u, err := url.Parse(r.Header.Get("Origin"))
+	if err != nil {
+		return ""
+	}
+	return u.Hostname()
 }
 
 func (h *CollectHandlers) clientIP(r *http.Request) string {

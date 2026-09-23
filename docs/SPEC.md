@@ -7,7 +7,7 @@
 
 | Field | Value |
 |-------|-------|
-| Document Version | `v1.17` |
+| Document Version | `v1.18` |
 | Date | `2026-09-23` |
 | Architect / Owner | `avatarsik666@gmail.com` |
 | Stack | See [docs/STACK.md](./STACK.md) |
@@ -421,8 +421,15 @@ in the query string).
 **Wire contract.** `POST /api/collect` (public, unauthenticated, CORS-enabled for a request's
 `Origin` only when it matches a registered site's domain): `{"site":"<site id>","url":"/path?query",
 "referrer":"https://…" ,"title":"…","screen":"1920x1080","language":"en-US"}` — `site` and `url`
-required, `url` ≤ 2048 bytes, others optional and capped similarly. Always answers `204` regardless
-of outcome (an unknown `site`, a bot match, or a malformed body are all silently dropped) — this
+required, `url` ≤ 2048 bytes, others optional and capped similarly. A beacon is stored only when
+the request's `Origin` hostname is the site's `domain` or `www.` plus it (Change 18). Browsers send
+`Origin` on every cross-origin POST, including `sendBeacon`. The rule drops the tracked site's own
+local, CI and Lighthouse runs, whose pages are served from `localhost`/`127.x` and would otherwise
+write test traffic into production counts, as seen on infraege.ru. It also drops a missing or `null`
+`Origin`: non-browser clients, and pages with `Referrer-Policy: no-referrer`, which are then not
+tracked. It is a data-quality filter, not authentication, since a non-browser client can forge the
+header. Always answers `204` regardless
+of outcome (an unknown `site`, a bot match, an origin mismatch or a malformed body are all silently dropped) — this
 endpoint must never let a prober distinguish "site exists" from "site does not," unlike the
 session-gated APIs elsewhere. Rate-limited per source IP (reusing `internal/platform/ratelimit`,
 the same mechanism as the login limiter) since it is the one write path with no auth at all.

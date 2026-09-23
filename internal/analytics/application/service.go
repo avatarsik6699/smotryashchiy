@@ -90,7 +90,9 @@ func (s *Service) Stats(ctx context.Context, siteID, rng string) (domain.Stats, 
 // returns an error the caller should act on beyond "nothing was stored" (docs/SPEC.md §4i: the
 // endpoint always answers 204) — the boolean reports whether a pageview was actually stored, purely
 // for the caller's own logging/testing, not for the HTTP response.
-func (s *Service) Collect(ctx context.Context, b domain.Beacon, clientIP, userAgent string) (bool, error) {
+// originHost is the request Origin's hostname; a beacon from any other origin (the site's own
+// localhost/CI/Lighthouse runs, a missing Origin) is dropped.
+func (s *Service) Collect(ctx context.Context, b domain.Beacon, clientIP, userAgent, originHost string) (bool, error) {
 	b, ok := b.Normalize()
 	if !ok {
 		return false, nil
@@ -102,7 +104,7 @@ func (s *Service) Collect(ctx context.Context, b domain.Beacon, clientIP, userAg
 	if err != nil {
 		return false, err
 	}
-	if !found {
+	if !found || !originMatchesSite(originHost, site.Domain) {
 		return false, nil
 	}
 	hash, err := s.visitorHash(ctx, site.ID, clientIP, userAgent)
@@ -121,6 +123,12 @@ func (s *Service) Collect(ctx context.Context, b domain.Beacon, clientIP, userAg
 		Device:         device,
 	})
 	return err == nil, err
+}
+
+func originMatchesSite(originHost, siteDomain string) bool {
+	host := strings.ToLower(originHost)
+	d := strings.ToLower(siteDomain)
+	return host != "" && (host == d || host == "www."+d)
 }
 
 // visitorHash derives a daily-rotating, salted, unlinkable-across-days visitor identity

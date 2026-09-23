@@ -94,6 +94,42 @@ func TestCollectOmitsCORSHeaderForAnUnregisteredOrigin(t *testing.T) {
 	}
 }
 
+// The tracked site's own dev/CI/Lighthouse runs post from localhost; only its own origin counts
+// (docs/SPEC.md §4i). Every case still answers 204.
+func TestCollectStoresOnlyFromTheSitesOwnOrigin(t *testing.T) {
+	for _, c := range []struct {
+		origin string
+		want   int
+	}{
+		{"https://a.example", 1},
+		{"https://www.a.example", 1},
+		{"http://localhost:3000", 0},
+		{"http://127.0.0.2:3200", 0},
+		{"https://evil.example", 0},
+		{"null", 0},
+		{"", 0},
+	} {
+		t.Run(c.origin, func(t *testing.T) {
+			srv, svc := newTestServer(t)
+			site, err := svc.CreateSite(t.Context(), domain.NewSite{Name: "A", Domain: "a.example"})
+			if err != nil {
+				t.Fatalf("CreateSite: %v", err)
+			}
+			resp := post(t, srv.URL+"/api/collect", c.origin, []byte(`{"site":"`+site.ID+`","url":"/"}`))
+			if resp.StatusCode != http.StatusNoContent {
+				t.Fatalf("status = %d, want 204", resp.StatusCode)
+			}
+			stats, err := svc.Stats(t.Context(), site.ID, "today")
+			if err != nil {
+				t.Fatalf("Stats: %v", err)
+			}
+			if stats.Pageviews != c.want {
+				t.Fatalf("origin %q: Pageviews = %d, want %d", c.origin, stats.Pageviews, c.want)
+			}
+		})
+	}
+}
+
 func TestCollectRateLimitsPerSourceIP(t *testing.T) {
 	srv, svc := newTestServer(t)
 	site, err := svc.CreateSite(t.Context(), domain.NewSite{Name: "A", Domain: "a.example"})
@@ -104,8 +140,8 @@ func TestCollectRateLimitsPerSourceIP(t *testing.T) {
 	// The burst (5, see collectRateLimit) plus a few more: httptest always presents the same
 	// loopback source IP, so extra requests beyond the burst must be dropped (still 204, but not
 	// stored — the endpoint never reveals rate limiting in its response).
-	for i := 0; i < 12; i++ {
-		post(t, srv.URL+"/api/collect", "", body)
+	for range 12 {
+		post(t, srv.URL+"/api/collect", "https://a.example", body)
 	}
 	stats, err := svc.Stats(t.Context(), site.ID, "today")
 	if err != nil {

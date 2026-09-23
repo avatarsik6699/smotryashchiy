@@ -286,6 +286,21 @@ Carry these into the first contract tests instead of rediscovering them in produ
   hour. Run the image with `--read-only --cap-drop ALL -v <dir>:/data`. Without the fix, the
   startup rollup logs 6410. With a writable rootfs, or with the fix, it writes 300 rollup rows.
 
+### A tracked site's own test runs post real beacons; Lighthouse passes the bot filter
+
+- **Symptoms**: pageviews stored for a site before it was ever deployed with the snippet. On
+  infraege.ru, 72 of the first 74 rows came from local dev-server checks and the infraegev2 Full
+  Gate. Lighthouse showed up as bursts of three hits per audited route from "Chrome / Android /
+  mobile".
+- **Root cause**: the snippet is part of the site's build, so every local, CI and Lighthouse run
+  loads it and `sendBeacon`s to the production collector. A text/plain beacon needs no CORS
+  preflight, so it is stored whatever its origin. Lighthouse sends a normal mobile Chrome
+  User-Agent, so the bot list cannot catch it.
+- **Fix**: `Collect` stores a beacon only when the `Origin` hostname is the site's domain or `www.`
+  plus it (Change 18). Browsers send `Origin` on cross-origin POST, including `sendBeacon`
+  (verified on infraege.ru: `Origin: https://infraege.ru`). A page with
+  `Referrer-Policy: no-referrer` sends `Origin: null` and is therefore not tracked.
+
 ### Docker-owned files break host operations (`EACCES` / `EPERM` / read-only)
 
 - **Symptoms**: file operations fail with `EACCES`, `EPERM`, "Permission denied" or

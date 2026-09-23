@@ -9,7 +9,7 @@
 | Change | `20` |
 | Slug | `release-follow-ups` |
 | Title | Follow-ups from the Change 19 release |
-| Status | `active` |
+| Status | `archived` |
 | Branch | `feature/20-release-follow-ups` |
 
 ---

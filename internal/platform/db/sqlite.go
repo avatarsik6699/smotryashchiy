@@ -47,7 +47,9 @@ func Open(path string) (*sql.DB, error) {
 			return nil, fmt.Errorf("db: create data dir: %w", err)
 		}
 	}
-	dsn := path + "?_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)"
+	// temp_store(MEMORY): the container rootfs is read-only, so SQLite has no temp dir to spill
+	// sorts or statement journals into (docs/SPEC.md §4f).
+	dsn := path + "?_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=temp_store(MEMORY)"
 	sqlDB, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("db: open %s: %w", path, err)

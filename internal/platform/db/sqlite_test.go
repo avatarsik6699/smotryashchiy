@@ -1,6 +1,9 @@
 package db
 
 import (
+	"context"
+	"database/sql/driver"
+	"errors"
 	"io/fs"
 	"path/filepath"
 	"testing"
@@ -20,6 +23,35 @@ func TestOpenCreatesDirectoryAndEnablesWAL(t *testing.T) {
 	var mode string
 	if err := sqlDB.QueryRow(`PRAGMA journal_mode`).Scan(&mode); err != nil || mode != "wal" {
 		t.Fatalf("journal_mode = %q, err = %v", mode, err)
+	}
+}
+
+// The production container has a read-only rootfs and no writable temp dir, so SQLite must never
+// need a temp file (docs/SPEC.md §4f).
+func TestOpenKeepsTempStorageInMemoryOnEveryConnection(t *testing.T) {
+	sqlDB, err := Open(openTemp(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqlDB.Close()
+	ctx := context.Background()
+	for i := range 2 {
+		conn, err := sqlDB.Conn(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var store int
+		if err := conn.QueryRowContext(ctx, `PRAGMA temp_store`).Scan(&store); err != nil {
+			t.Fatal(err)
+		}
+		if store != 2 {
+			t.Fatalf("connection %d: temp_store = %d, want 2 (MEMORY)", i, store)
+		}
+		// Discard the connection so the next iteration gets a freshly opened one.
+		if err := conn.Raw(func(any) error { return driver.ErrBadConn }); !errors.Is(err, driver.ErrBadConn) {
+			t.Fatalf("discard connection: %v", err)
+		}
+		_ = conn.Close()
 	}
 }
 

@@ -7,7 +7,7 @@
 
 | Field | Value |
 |-------|-------|
-| Document Version | `v1.16` |
+| Document Version | `v1.17` |
 | Date | `2026-09-23` |
 | Architect / Owner | `avatarsik666@gmail.com` |
 | Stack | See [docs/STACK.md](./STACK.md) |
@@ -301,7 +301,10 @@ The server probes operator-defined **targets** itself; nothing runs on the monit
   migrations. A `SHA256SUMS` file accompanies the binaries.
 - **Image.** Multi-stage build (node → go → `gcr.io/distroless/static-debian12:nonroot`): no shell, CA
   roots included (the prober needs them), user `65532`, works with a read-only root filesystem, writes only
-  under `/data` (`SMOTRYASHCHIY_DB_PATH=/data/smotryashchiy.db`). Exposes `8080/tcp` and `51820/udp`. The image
+  under `/data` (`SMOTRYASHCHIY_DB_PATH=/data/smotryashchiy.db`). SQLite keeps its temporary storage (sorters,
+  temporary B-trees, statement journals) in memory (`temp_store=MEMORY`): the read-only rootfs has no writable
+  temp directory, and a spill to disk fails with `disk I/O error (6410)`. This is what stopped hourly rollups in
+  production once the data outgrew SQLite's in-memory buffers (Change 17). Exposes `8080/tcp` and `51820/udp`. The image
   `HEALTHCHECK` runs `smotryashchiy healthcheck`, which requests `GET /health/ready` on the configured
   listen address (loopback for wildcard addresses) with a 3 s timeout and exits `0` only on `200`.
 - **Compose example** `deploy/docker-compose.yml`: the server with a named volume, the two ports, a

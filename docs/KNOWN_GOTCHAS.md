@@ -271,6 +271,21 @@ Carry these into the first contract tests instead of rediscovering them in produ
   `Script` asset removes its `<script>` node right after hydration, after the deferred script has
   already run. A DOM query for the tag therefore reports it missing even though tracking works.
 
+### A read-only rootfs leaves SQLite no temp dir: `disk I/O error (6410)` once data grows
+
+- **Symptoms**: `telemetry maintenance job failed job=rollup ... disk I/O error (6410)` in
+  production. `rollup_state` stopped advancing (2026-09-22 11:00 UTC) while ingest and the UI kept
+  working. The fault is latent: early hours rolled up fine.
+- **Root cause**: 6410 is `SQLITE_IOERR_GETTEMPPATH`. SQLite spills large sorts, temporary B-trees
+  and statement journals to a temp file. It looks in `SQLITE_TMPDIR`, `TMPDIR`, `/var/tmp`,
+  `/usr/tmp`, `/tmp` and `.`, and with `read_only: true` none of them is writable. Small workloads
+  stay in memory, so nothing fails until an hour's data outgrows the buffers.
+- **Fix**: `temp_store=MEMORY` in `db.Open`'s DSN (Change 17). Do not add a `tmpfs` to one compose
+  file instead: every read-only deployment needs the fix.
+- **Reproduce**: create a DB with the real migrations and ~100k metric rows (300 series) in one past
+  hour. Run the image with `--read-only --cap-drop ALL -v <dir>:/data`. Without the fix, the
+  startup rollup logs 6410. With a writable rootfs, or with the fix, it writes 300 rollup rows.
+
 ### Docker-owned files break host operations (`EACCES` / `EPERM` / read-only)
 
 - **Symptoms**: file operations fail with `EACCES`, `EPERM`, "Permission denied" or

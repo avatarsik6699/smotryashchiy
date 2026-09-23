@@ -9,7 +9,7 @@
 | Change | `19` |
 | Slug | `audit-hardening` |
 | Title | Hardening from the production audit |
-| Status | `active` |
+| Status | `archived` |
 | Branch | `feature/19-audit-hardening` |
 
 ---

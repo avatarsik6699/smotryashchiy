@@ -7,7 +7,7 @@
 
 | Field | Value |
 |-------|-------|
-| Document Version | `v1.20` |
+| Document Version | `v1.21` |
 | Date | `2026-09-23` |
 | Architect / Owner | `avatarsik666@gmail.com` |
 | Stack | See [docs/STACK.md](./STACK.md) |
@@ -379,8 +379,10 @@ placeholder row.
   running container per tick for `docker.container.cpu_percent` and
   `docker.container.memory_used_bytes`/`docker.container.memory_used_percent`, labeled
   `container` (name) and `image`. A container's own metrics stop appearing once it exits — the last
-  known values are not repeated (§4.3 `latest=true` naturally ages out on its own once the row is no
-  longer refreshed within the query window, no separate "container removed" signal is needed).
+  known values are not repeated, and there is no separate "container removed" signal. `latest=true`
+  has no time window: it returns the newest point of every series still inside the raw TTL, including
+  exited containers and the series of a container's previous image. The UI therefore decides what is
+  current (§5 CONTAINERS, Change 21).
   Missing/unreadable socket (no Docker installed, or the agent's user lacks access) disables this
   collector for the run, logged once, like any other collector failure.
   **Collection time (Change 19).** A `stats?stream=false` call blocks ~2 s while Docker samples CPU
@@ -392,7 +394,11 @@ placeholder row.
 - **Log/event collection** (journald + Docker container logs): tailed continuously (not polled),
   forwarded as `events` (§4.1) with `level` mapped from syslog priority (`err`/`crit`+ → `error`,
   `warning` → `warn`, else `info`), `message` truncated to the existing 2048-byte cap, and labels
-  `unit` (journald) or `container` (Docker logs). Bounded like any other event: the existing batch
+  `unit` (journald) or `container` (Docker logs). A Docker log line has no priority: stdout maps to
+  `info`, stderr to `warn`. The server follows that contract for its own output (Change 21):
+  `info`-level records, including the per-request access line, go to stdout, and `warn`/`error`
+  records (a recovered panic among them) go to stderr, so a monitored server does not report every
+  API request as a warning. Bounded like any other event: the existing batch
   cap (≤1000 records) and the offline spool bounds (5000 batches/64 MiB, §4c) are the backpressure
   mechanism — a burst of log lines competes with metrics/checks for the same batch and spool budget,
   there is no separate unbounded log buffer. journald is read via `journalctl -f -o json` (no cgo
@@ -582,7 +588,11 @@ currently no way to tell which source an event came from without reading the mes
 **CONTAINERS panel and generic Check metadata (Change 12):** the expanded host row gains a
 **CONTAINERS** block (same list style as DISKS/INTERFACES) grouping `docker.container.*` metrics
 by the `container` label: name, image, current CPU%, current memory (used/percent) per container,
-sorted busiest-first like INTERFACES already is; a host with no `docker.container.*` metrics omits
+sorted busiest-first like INTERFACES already is. Change 21: all series of one container name are
+merged by taking, per metric, the series with the newest point, and its `image` label is shown; a
+container none of whose series has a fresh sample (last 5 minutes, same rule as other current values)
+is not listed, so exited, removed and one-off containers disappear and a redeployed container shows
+its new image. A host with no `docker.container.*` metrics omits
 the block entirely (same "no data" convention as an unreachable Docker socket, §4h). The CHECKS
 block stays generic — it must not special-case fail2ban — but gains one addition that helps any
 current or future check type: when a check's `meta` is non-empty, its key/value pairs render inline

@@ -19,6 +19,7 @@ import (
 	"github.com/avatarsik6699/smotryashchiy/internal/platform/config"
 	"github.com/avatarsik6699/smotryashchiy/internal/platform/db"
 	"github.com/avatarsik6699/smotryashchiy/internal/platform/httpserver"
+	"github.com/avatarsik6699/smotryashchiy/internal/platform/logging"
 	telemetryapp "github.com/avatarsik6699/smotryashchiy/internal/telemetry/application"
 	telemetryinfra "github.com/avatarsik6699/smotryashchiy/internal/telemetry/infrastructure"
 	telemetryhttp "github.com/avatarsik6699/smotryashchiy/internal/telemetry/interfaces/http"
@@ -32,7 +33,10 @@ import (
 
 const shutdownTimeout = 10 * time.Second
 
-func runServer(stdout io.Writer) error {
+func runServer(stdout, stderr io.Writer) error {
+	// Info to stdout, warnings and errors to stderr: the stream is the only level a Docker log
+	// collector sees (docs/SPEC.md §4h). The standard log package follows the default logger too.
+	slog.SetDefault(logging.NewSplit(stdout, stderr))
 	cfg, err := config.Load(release)
 	if err != nil {
 		return err

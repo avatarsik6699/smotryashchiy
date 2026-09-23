@@ -6,7 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"time"
@@ -42,8 +42,9 @@ func withLogging(next http.Handler) http.Handler {
 		started := time.Now()
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(rec, r)
-		log.Printf("request_id=%s method=%s path=%s status=%d duration=%s",
-			RequestIDFromContext(r.Context()), r.Method, r.URL.Path, rec.status, time.Since(started))
+		// Info goes to stdout: a routine request is not a warning to a log collector (SPEC §4h).
+		slog.Info("request", "request_id", RequestIDFromContext(r.Context()), "method", r.Method,
+			"path", r.URL.Path, "status", rec.status, "duration", time.Since(started))
 	})
 }
 
@@ -51,7 +52,7 @@ func withRecover(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if rec := recover(); rec != nil {
-				log.Printf("request_id=%s panic=%v", RequestIDFromContext(r.Context()), rec)
+				slog.Error("request panicked", "request_id", RequestIDFromContext(r.Context()), "panic", rec)
 				w.WriteHeader(http.StatusInternalServerError)
 			}
 		}()

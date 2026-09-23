@@ -354,3 +354,21 @@ Carry these into the first contract tests instead of rediscovering them in produ
 - **Fix**: mount request guards only through `authhttp.Protect` (guard first, then session), and have
   tests serve `httpserver.Server.Handler()` — the real chain — instead of composing middleware
   themselves. `TestUseRunsMiddlewareInRegistrationOrder` pins the order.
+
+### `latest=true` has no window: exited containers and old images stay in it
+
+- **Symptoms**: after a deploy the CONTAINERS block showed `—` for running containers, an old image,
+  and containers removed hours earlier (v0.2.4, 2026-09-23).
+- **Root cause**: a container's series is keyed by its labels, `image` included, so every redeploy
+  starts a new series; `latest=true` returns the newest point of *every* series inside the raw TTL.
+  The UI merged them by name and let whichever series came last win.
+- **Fix**: the UI decides what is current — per container and metric the newest series wins, and a
+  container with no fresh sample is not shown (docs/SPEC.md §5). Never assume `latest` ages out.
+
+### A Docker log stream is the only level the agent sees
+
+- **Symptoms**: every dashboard request appeared as a `warn` event from the server container.
+- **Root cause**: Docker log lines carry no priority; the agent maps stdout to `info` and stderr to
+  `warn`, and Go's `log` package writes to stderr by default.
+- **Fix**: the server's default `slog` logger sends Info to stdout and Warn/Error to stderr
+  (`internal/platform/logging`). Any container you want to read well in EVENTS must do the same.

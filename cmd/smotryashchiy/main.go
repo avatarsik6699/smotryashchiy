@@ -24,7 +24,7 @@ func run(args []string, stdin *os.File, stdout, stderr *os.File) int {
 	var err error
 	switch args[0] {
 	case "server":
-		err = runServer(stdout)
+		err = runServer(stdout, stderr)
 	case "agent":
 		err = runAgent(args[1:], stdout)
 	case "admin":

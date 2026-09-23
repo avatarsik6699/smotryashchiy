@@ -53,7 +53,9 @@ against database corruption, not host loss).
 - **Health**: `curl -f https://monitor.example.com/health/ready` (or the ACME-mode port, see
   `docs/DEPLOY.md`) — `200` with the running release SHA, `503` when the database cannot be reached.
 - **Logs**: `docker compose logs --since 1h server`. Every request is logged with a `request_id`;
-  correlate it with the `X-Request-Id` response header when investigating a specific failure.
+  correlate it with the `X-Request-Id` response header when investigating a specific failure. Info
+  records (the access line among them) go to stdout, warnings and errors to stderr, so an agent
+  watching the server container reports routine requests as `info` (docs/SPEC.md §4h).
 - **Disk**: the SQLite file plus its `-wal`/`-shm` siblings under the `smotryashchiy-data` volume. Raw
   telemetry and uptime results are purged after `SMOTRYASHCHIY_RAW_RETENTION_DAYS` (default 30); rollups
   after `SMOTRYASHCHIY_ROLLUP_RETENTION_DAYS` (default 396). If disk use is unexpectedly high, check
@@ -104,3 +106,26 @@ See `docs/DEPLOY.md#upgrading`: back up, `docker compose pull && up -d` (migrati
 run automatically), roll back by restoring the pre-upgrade bundle with the previous image tag — a binary
 older than a bundle's schema refuses to restore it, by design, so always roll the image back together
 with the data.
+
+### Updating an agent
+
+The agent is the same binary as the server. On each monitored host:
+
+```bash
+v=v0.2.5; cd /tmp
+curl -fsSLO "https://github.com/avatarsik6699/smotryashchiy/releases/download/$v/smotryashchiy-linux-amd64"
+curl -fsSLO "https://github.com/avatarsik6699/smotryashchiy/releases/download/$v/SHA256SUMS"
+sha256sum --ignore-missing -c SHA256SUMS
+cp /usr/local/bin/smotryashchiy /usr/local/bin/smotryashchiy.bak   # rollback copy
+install -m 755 smotryashchiy-linux-amd64 /usr/local/bin/smotryashchiy
+systemctl restart smotryashchiy-agent && /usr/local/bin/smotryashchiy version
+```
+
+The host row must turn `OK` again within a minute. Remove the `.bak` once the new agent has run
+cleanly; restore it and restart the unit to roll back.
+
+## Host hygiene
+
+Hosts with UFW should run `ufw logging off`. With logging on, every blocked port-scan packet is a
+kernel `[UFW BLOCK]` line, which the agent forwards as a `warn` event (hundreds per hour on a public
+IP); real signals drown in it. fail2ban reads the sshd log, not UFW's, so bans are unaffected.

@@ -59,15 +59,15 @@ func TestBeaconNormalize(t *testing.T) {
 }
 
 func TestBeaconNormalizeTruncatesOverlongFields(t *testing.T) {
-	long := make([]byte, MaxTitleBytes+100)
+	long := make([]byte, MaxReferrerBytes+100)
 	for i := range long {
 		long[i] = 'a'
 	}
-	b, ok := Beacon{Site: "s", URL: "/p", Title: string(long)}.Normalize()
+	b, ok := Beacon{Site: "s", URL: "/p", Referrer: string(long)}.Normalize()
 	if !ok {
 		t.Fatal("want ok=true")
 	}
-	if len(b.Title) != MaxTitleBytes {
-		t.Fatalf("Title length = %d, want %d", len(b.Title), MaxTitleBytes)
+	if len(b.Referrer) != MaxReferrerBytes {
+		t.Fatalf("Referrer length = %d, want %d", len(b.Referrer), MaxReferrerBytes)
 	}
 }

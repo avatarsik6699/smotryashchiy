@@ -342,3 +342,15 @@ Carry these into the first contract tests instead of rediscovering them in produ
   Go's ticker drops ticks that fire while a tick is still collecting.
 - **Fix**: the Docker collector reads stats concurrently under a per-tick deadline (docs/SPEC.md §4h).
   Measured on infraege.ru: 17.8 s serial vs 2.0 s parallel for 9 containers.
+
+### `Server.Use` runs middleware in registration order — and a hand-built test chain hid it
+
+- **Symptoms**: on v0.2.3 a cookieless cross-origin write answered `401` (session gating) instead of
+  `403` (the cross-origin guard) in production, while the tests said `403`.
+- **Root cause**: `httpserver.Server.Use` makes the *first* added middleware outermost, but its doc
+  said the opposite, so `server.go` registered the guard second, i.e. inside session gating. The auth
+  tests wrapped the handlers by hand in the intended order, so they tested an order production did
+  not have.
+- **Fix**: mount request guards only through `authhttp.Protect` (guard first, then session), and have
+  tests serve `httpserver.Server.Handler()` — the real chain — instead of composing middleware
+  themselves. `TestUseRunsMiddlewareInRegistrationOrder` pins the order.

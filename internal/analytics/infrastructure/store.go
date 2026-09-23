@@ -192,25 +192,6 @@ func (s *Store) DailySaltBase(ctx context.Context) (string, error) {
 	return value, nil
 }
 
-// RollupDay aggregates one UTC day's raw pageviews into pageview_rollups_daily, per (site, path);
-// recomputing a day overwrites it (idempotent, mirrors the metric rollup job, docs/SPEC.md §4.4).
-func (s *Store) RollupDay(ctx context.Context, day time.Time) error {
-	start := day.UTC().Truncate(24 * time.Hour)
-	end := start.Add(24 * time.Hour)
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO pageview_rollups_daily (site_id, day, path, unique_visitors, pageviews)
-		SELECT site_id, ?, path, COUNT(DISTINCT visitor_hash), COUNT(*)
-		FROM pageviews WHERE ts >= ? AND ts < ?
-		GROUP BY site_id, path
-		ON CONFLICT(site_id, day, path) DO UPDATE SET
-			unique_visitors = excluded.unique_visitors, pageviews = excluded.pageviews`,
-		start.UnixMilli(), start.UnixMilli(), end.UnixMilli())
-	if err != nil {
-		return fmt.Errorf("analytics: rollup day: %w", err)
-	}
-	return nil
-}
-
 // PurgePageviews deletes up to limit pageviews older than before (bounded so the single writer is
 // never held long).
 func (s *Store) PurgePageviews(ctx context.Context, before time.Time, limit int) (int, error) {

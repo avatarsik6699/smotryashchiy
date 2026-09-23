@@ -52,8 +52,8 @@ type loginRequest struct {
 }
 
 func (h *Handlers) login(w http.ResponseWriter, r *http.Request) {
-	clientIP := h.loginLimiter.clientIP(r)
-	if retryAfter, limited := h.loginLimiter.retryAfter(clientIP); limited {
+	client := h.loginLimiter.clientKey(r)
+	if retryAfter, limited := h.loginLimiter.retryAfter(client); limited {
 		seconds := int(retryAfter.Round(time.Second).Seconds())
 		if seconds < 1 {
 			seconds = 1
@@ -72,12 +72,12 @@ func (h *Handlers) login(w http.ResponseWriter, r *http.Request) {
 	session, err := h.service.Login(r.Context(), req.Password)
 	if err != nil {
 		if errors.Is(err, domain.ErrInvalidCredentials) {
-			h.loginLimiter.failure(clientIP)
+			h.loginLimiter.failure(client)
 		}
 		apierror.Write(w, err)
 		return
 	}
-	h.loginLimiter.success(clientIP)
+	h.loginLimiter.success(client)
 	h.setCookie(w, r, session.Token, session.ExpiresAt)
 	w.WriteHeader(http.StatusNoContent)
 }

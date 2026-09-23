@@ -58,6 +58,8 @@ const steps = [
       if (b.url !== "https://collector.test/api/collect") throw new Error("beacon to " + b.url);
       const body = JSON.parse(await b.blob.text());
       if (body.site !== "site-1") throw new Error("beacon for site " + body.site);
+      const keys = Object.keys(body).sort().join(",");
+      if (keys !== "referrer,site,url") throw new Error("beacon keys " + keys + ", want referrer,site,url");
       sent.push(body.url + " ref=" + body.referrer);
     }
     out.push({ step: name, sent });

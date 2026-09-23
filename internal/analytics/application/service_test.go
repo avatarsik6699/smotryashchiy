@@ -45,7 +45,6 @@ func (f *fakeRepo) Stats(_ context.Context, _ string, since time.Time) (domain.S
 	return domain.Stats{}, nil
 }
 func (f *fakeRepo) DailySaltBase(context.Context) (string, error)               { return f.salt, nil }
-func (f *fakeRepo) RollupDay(context.Context, time.Time) error                  { return nil }
 func (f *fakeRepo) PurgePageviews(context.Context, time.Time, int) (int, error) { return 0, nil }
 
 func TestCollectStoresAValidBeacon(t *testing.T) {
@@ -94,6 +93,8 @@ func TestCollectDropsKnownBotUserAgents(t *testing.T) {
 		"curl/8.5.0",
 		"python-requests/2.31.0",
 		"Mozilla/5.0 (compatible; AhrefsBot/7.0)",
+		// PageSpeed Insights / Lighthouse on the production origin (docs/SPEC.md §4i).
+		"Mozilla/5.0 (Linux; Android 11; moto g power (2022)) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36 Chrome-Lighthouse",
 	}
 	for _, ua := range bots {
 		stored, err := svc.Collect(context.Background(), domain.Beacon{Site: "s", URL: "/"}, "1.2.3.4", ua, "s")
@@ -188,6 +189,12 @@ func TestParseUserAgent(t *testing.T) {
 		{"Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1", "Safari", "iOS", "tablet"},
 		{"Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36", "Chrome", "Android", "mobile"},
 		{"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Firefox/120.0", "Firefox", "Linux", "desktop"},
+		{"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 YaBrowser/25.4.0.0 Safari/537.36", "Yandex Browser", "Windows", "desktop"},
+		{"Mozilla/5.0 (Linux; Android 14; SM-A546B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 YaBrowser/25.4.1.100 Mobile Safari/537.36", "Yandex Browser", "Android", "mobile"},
+		{"Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/131.0.6778.73 Mobile/15E148 Safari/604.1", "Chrome", "iOS", "mobile"},
+		{"Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) FxiOS/133.0 Mobile/15E148 Safari/605.1.15", "Firefox", "iOS", "mobile"},
+		{"Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1 EdgiOS/131.0.2903.68", "Edge", "iOS", "mobile"},
+		{"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0", "Edge", "Windows", "desktop"},
 	}
 	for _, c := range cases {
 		browser, os, device := parseUserAgent(c.ua)

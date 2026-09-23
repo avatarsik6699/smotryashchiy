@@ -14,12 +14,9 @@ import (
 	"github.com/avatarsik6699/smotryashchiy/internal/analytics/domain"
 )
 
-// rollupInterval and purgeInterval mirror the telemetry maintenance job's cadence
+// purgeInterval mirrors the telemetry maintenance job's cadence
 // (internal/telemetry/application/maintenance.go).
-const (
-	rollupInterval = time.Hour
-	purgeInterval  = time.Hour
-)
+const purgeInterval = time.Hour
 
 // Repository is the persistence port.
 type Repository interface {
@@ -30,7 +27,6 @@ type Repository interface {
 	InsertPageview(ctx context.Context, p domain.Pageview) error
 	Stats(ctx context.Context, siteID string, since time.Time) (domain.Stats, error)
 	DailySaltBase(ctx context.Context) (string, error)
-	RollupDay(ctx context.Context, day time.Time) error
 	PurgePageviews(ctx context.Context, before time.Time, limit int) (int, error)
 }
 
@@ -149,19 +145,6 @@ func (s *Service) visitorHash(ctx context.Context, siteID, ip, ua string) (strin
 	return hex.EncodeToString(visitor[:16]), nil
 }
 
-// Rollup aggregates yesterday's (and, defensively, the last 2 days') raw pageviews into
-// pageview_rollups_daily, mirroring the metric rollup job's idempotent re-aggregation pattern
-// (docs/SPEC.md §4.4). Today is never rolled up: it is still accumulating.
-func (s *Service) Rollup(ctx context.Context) error {
-	today := s.now().UTC().Truncate(24 * time.Hour)
-	for i := 1; i <= 2; i++ {
-		if err := s.repo.RollupDay(ctx, today.Add(-time.Duration(i)*24*time.Hour)); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // Purge deletes pageviews older than the retention window, in bounded batches.
 func (s *Service) Purge(ctx context.Context) error {
 	if s.opts.Retention <= 0 {
@@ -176,22 +159,18 @@ func (s *Service) Purge(ctx context.Context) error {
 	}
 }
 
-// Run executes rollup then purge immediately and then hourly until ctx is done. Failures are
-// logged and retried at the next tick; they never stop the server (mirrors
-// internal/telemetry/application/maintenance.go's Run).
+// Run executes the purge immediately and then hourly until ctx is done. Failures are logged and
+// retried at the next tick; they never stop the server (mirrors
+// internal/telemetry/application/maintenance.go's Run). There is no rollup: stats read raw
+// pageviews only (docs/SPEC.md §4i).
 func (s *Service) Run(ctx context.Context) {
-	s.runOnce(ctx, "rollup", s.Rollup)
 	s.runOnce(ctx, "purge", s.Purge)
-	rollupTick := time.NewTicker(rollupInterval)
 	purgeTick := time.NewTicker(purgeInterval)
-	defer rollupTick.Stop()
 	defer purgeTick.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-rollupTick.C:
-			s.runOnce(ctx, "rollup", s.Rollup)
 		case <-purgeTick.C:
 			s.runOnce(ctx, "purge", s.Purge)
 		}
@@ -244,6 +223,9 @@ var botPatterns = []string{
 	"bot", "spider", "crawl", "slurp", "facebookexternalhit", "embedly", "quora link preview",
 	"whatsapp", "google-inspectiontool", "bingpreview", "headlesschrome", "phantomjs", "pingdom",
 	"uptimerobot", "curl/", "wget/", "python-requests", "go-http-client",
+	// Lighthouse and PageSpeed Insights load the real production origin with a mobile-Chrome UA plus
+	// this token; the origin rule (Change 18) only drops their local runs (docs/SPEC.md §4i).
+	"chrome-lighthouse",
 }
 
 func isBotUA(ua string) bool {
@@ -257,17 +239,21 @@ func isBotUA(ua string) bool {
 }
 
 // parseUserAgent derives a coarse browser/OS/device breakdown without a third-party dependency —
-// good enough for a summary view, not a precise device database.
+// good enough for a summary view, not a precise device database. Browser tokens are checked
+// most-specific first: each browser also carries the tokens of the engines after it (Yandex
+// Browser says Chrome/ and Safari/, Chrome on iOS says Safari/) (docs/SPEC.md §4i).
 func parseUserAgent(ua string) (browser, os, device string) {
 	ual := strings.ToLower(ua)
 	switch {
-	case strings.Contains(ual, "edg/"):
+	case strings.Contains(ual, "yabrowser/"):
+		browser = "Yandex Browser"
+	case strings.Contains(ual, "edg/"), strings.Contains(ual, "edgios/"), strings.Contains(ual, "edga/"):
 		browser = "Edge"
 	case strings.Contains(ual, "opr/") || strings.Contains(ual, "opera"):
 		browser = "Opera"
-	case strings.Contains(ual, "firefox/"):
+	case strings.Contains(ual, "firefox/"), strings.Contains(ual, "fxios/"):
 		browser = "Firefox"
-	case strings.Contains(ual, "chrome/"):
+	case strings.Contains(ual, "chrome/"), strings.Contains(ual, "crios/"):
 		browser = "Chrome"
 	case strings.Contains(ual, "safari/"):
 		browser = "Safari"

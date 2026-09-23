@@ -24,10 +24,15 @@ func New(addr string) *Server {
 }
 
 // Use registers middleware around Mux, inside the request-id/logging/recover chain, so even a
-// rejected request is logged. Middleware added first wraps closest to Mux.
+// rejected request is logged. Middleware runs in registration order: the first added is outermost
+// and sees a request first, the last added runs closest to Mux.
 func (s *Server) Use(mw func(http.Handler) http.Handler) {
 	s.middleware = append(s.middleware, mw)
 }
+
+// Handler is the complete handler Serve and ServeHTTPS use: Mux inside the registered middleware
+// and the platform chain. Tests serve it to exercise the real order.
+func (s *Server) Handler() http.Handler { return s.chained() }
 
 func (s *Server) chained() http.Handler {
 	var handler http.Handler = s.Mux

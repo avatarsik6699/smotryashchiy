@@ -91,3 +91,18 @@ func TestCrossOriginGuardCoversLogoutAndLeavesReadsAlone(t *testing.T) {
 		t.Fatalf("cross-site GET = %d, want 200 (reads are not guarded)", rec.Code)
 	}
 }
+
+// On v0.2.3 the guard ran inside session gating, so a cookieless foreign write answered 401. It
+// must be refused as a cross-origin write (docs/SPEC.md §4d) — through the real server chain.
+func TestCookielessForeignWriteIsRefusedByTheGuardNotTheSessionCheck(t *testing.T) {
+	h, _ := newServer(t, Options{})
+	for _, path := range []string{"/api/auth/logout", "/api/private"} {
+		rec := serve(h, newPost(path, "", "Origin", "https://evil.example.test"))
+		if rec.Code != http.StatusForbidden {
+			t.Errorf("%s without a cookie = %d, want 403 from the cross-origin guard", path, rec.Code)
+		}
+	}
+	if rec := serve(h, newPost("/api/private", "")); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("a same-origin write without a cookie = %d, want 401 from session gating", rec.Code)
+	}
+}

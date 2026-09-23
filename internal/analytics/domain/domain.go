@@ -18,9 +18,6 @@ const (
 	MaxDomainBytes   = 253
 	MaxURLBytes      = 2048
 	MaxReferrerBytes = 2048
-	MaxTitleBytes    = 256
-	MaxScreenBytes   = 32
-	MaxLanguageBytes = 35
 )
 
 // Site is a website an operator tracks for visitor analytics.
@@ -55,9 +52,6 @@ type Beacon struct {
 	Site     string `json:"site"`
 	URL      string `json:"url"`
 	Referrer string `json:"referrer"`
-	Title    string `json:"title"`
-	Screen   string `json:"screen"`
-	Language string `json:"language"`
 }
 
 // Normalize caps every field's length (silent truncation, never an error: this public endpoint
@@ -67,9 +61,6 @@ func (b Beacon) Normalize() (Beacon, bool) {
 	b.Site = strings.TrimSpace(b.Site)
 	b.URL = capString(strings.TrimSpace(b.URL), MaxURLBytes)
 	b.Referrer = capString(strings.TrimSpace(b.Referrer), MaxReferrerBytes)
-	b.Title = capString(strings.TrimSpace(b.Title), MaxTitleBytes)
-	b.Screen = capString(strings.TrimSpace(b.Screen), MaxScreenBytes)
-	b.Language = capString(strings.TrimSpace(b.Language), MaxLanguageBytes)
 	return b, b.Site != "" && b.URL != ""
 }
 

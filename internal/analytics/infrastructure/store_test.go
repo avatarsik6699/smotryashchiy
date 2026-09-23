@@ -125,7 +125,7 @@ func TestDailySaltBaseIsGeneratedOnceAndStable(t *testing.T) {
 	}
 }
 
-func TestRollupDayAggregatesAndPurgeRemovesOldPageviews(t *testing.T) {
+func TestPurgeRemovesOldPageviews(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 	site, err := s.CreateSite(ctx, domain.NewSite{Name: "A", Domain: "a.example"}, time.Now())
@@ -142,14 +142,6 @@ func TestRollupDayAggregatesAndPurgeRemovesOldPageviews(t *testing.T) {
 			t.Fatalf("InsertPageview: %v", err)
 		}
 	}
-	if err := s.RollupDay(ctx, day); err != nil {
-		t.Fatalf("RollupDay: %v", err)
-	}
-	// Re-running (idempotent) must not error or double-count.
-	if err := s.RollupDay(ctx, day); err != nil {
-		t.Fatalf("RollupDay (re-run): %v", err)
-	}
-
 	n, err := s.PurgePageviews(ctx, day.Add(24*time.Hour), 100)
 	if err != nil {
 		t.Fatalf("PurgePageviews: %v", err)
@@ -163,5 +155,18 @@ func TestRollupDayAggregatesAndPurgeRemovesOldPageviews(t *testing.T) {
 	}
 	if stats.Pageviews != 0 {
 		t.Fatalf("raw pageviews survived purge: %+v", stats)
+	}
+}
+
+// Change 20 dropped the daily pageview rollups (docs/SPEC.md §4i): a migrated database has no such
+// table, so nothing can quietly start writing to it again.
+func TestMigratedDatabaseHasNoPageviewRollups(t *testing.T) {
+	s := newTestStore(t)
+	var n int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE name = 'pageview_rollups_daily'`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatal("pageview_rollups_daily still exists after migrating")
 	}
 }

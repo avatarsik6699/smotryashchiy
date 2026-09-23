@@ -7,7 +7,7 @@
 
 | Field | Value |
 |-------|-------|
-| Document Version | `v1.19` |
+| Document Version | `v1.20` |
 | Date | `2026-09-23` |
 | Architect / Owner | `avatarsik666@gmail.com` |
 | Stack | See [docs/STACK.md](./STACK.md) |
@@ -96,7 +96,9 @@ once and never re-alerted. Additive-only versioning after v1.
   WebSocket. No separate web server or SSR container.
 - **TLS.** Built-in ACME (certmagic) for the UI origin; no separate proxy container.
 - **Auth.** Single admin password (bcrypt), HttpOnly/SameSite=Lax session cookie, failed-login
-  rate limit, hash initialized only via the stdin-only `admin` command.
+  rate limit, hash initialized only via the stdin-only `admin` command. The failed-login limiter keys
+  a client like the collect limiter (§4i: IPv4 address or IPv6 `/64`) and holds at most 10 000 clients,
+  dropping expired entries first and then the least recently seen (Change 20).
 
 ## 4. Telemetry contract and storage (Changes 02–03)
 
@@ -264,7 +266,9 @@ All routes below except static assets require the session cookie.
   riding the session cookie on a POST, and a `text/plain` body needs no CORS preflight — found in the
   2026-09-23 production audit (a `text/plain` POST from another subdomain created an uptime target and a
   site). Every `/api/*` request with a method other than `GET`/`HEAD`/`OPTIONS`, except `POST /api/collect`
-  and `POST /api/enroll`, is refused with `403` JSON before its handler runs when either: its
+  and `POST /api/enroll`, is refused with `403` JSON before its handler and before the session check
+  runs (so a foreign write answers `403` whether or not it carries a cookie; Change 20 fixed an
+  ordering where a cookieless one got `401`) when either: its
   `Sec-Fetch-Site` header is present and not `same-origin` or `none`; or it has no `Sec-Fetch-Site` and
   its `Origin` header is present and its host is not the request's `Host` (host only, like the WebSocket
   check: TLS may end at a trusted proxy, so the server's scheme is not the browser's; `null` is refused). A request that
@@ -451,8 +455,9 @@ query string and fragment are dropped server-side (Change 19; production stored 
 
 **Wire contract.** `POST /api/collect` (public, unauthenticated, CORS-enabled for a request's
 `Origin` only when its hostname is a registered site's domain or `www.` plus it): `{"site":"<site id>","url":"/path",
-"referrer":"https://…" ,"title":"…","screen":"1920x1080","language":"en-US"}` — `site` and `url`
-required, `url` ≤ 2048 bytes, others optional and capped similarly. A beacon is stored only when
+"referrer":"https://…"}` — `site` and `url` required, `url` ≤ 2048 bytes, `referrer` optional and
+capped similarly. Snippets before Change 20 also sent `title`, `screen` and `language`; nothing ever
+stored them, the current snippet no longer sends them, and the server still accepts and ignores them. A beacon is stored only when
 the request's `Origin` hostname is the site's `domain` or `www.` plus it (Change 18). Browsers send
 `Origin` on every cross-origin POST, including `sendBeacon`. The rule drops the tracked site's own
 local, CI and Lighthouse runs, whose pages are served from `localhost`/`127.x` and would otherwise
@@ -462,8 +467,8 @@ tracked. It is a data-quality filter, not authentication, since a non-browser cl
 header. Always answers `204` regardless
 of outcome (an unknown `site`, a bot match, an origin mismatch or a malformed body are all silently dropped) — this
 endpoint must never let a prober distinguish "site exists" from "site does not," unlike the
-session-gated APIs elsewhere. Rate-limited per source IP (reusing `internal/platform/ratelimit`,
-the same mechanism as the login limiter) since it is the one write path with no auth at all.
+session-gated APIs elsewhere. Rate-limited per source IP (`internal/platform/ratelimit`) since it
+is the one write path with no auth at all.
 The limit is checked before any database work (including the CORS site lookup). Limiter keys are
 an IPv4 address or an IPv6 `/64` prefix (one IPv6 client usually holds a whole `/64`, so a per-address
 key is trivially bypassed), and the limiter holds at most 10 000 keys: when full it drops idle keys
@@ -474,9 +479,14 @@ sending it with every pageview counted one external visit once per page viewed. 
 `referrer` only with the first pageview of a page load; the server also drops a referrer whose
 hostname is the site's own domain or `www.` plus it (internal navigation is not a referral).
 `browser`/`os`/`device` are derived server-side from the `User-Agent` request header, never taken
-from the client body (keeps the payload small and unspoofable-by-omission). A server-side
-known-bot `User-Agent` pattern list is a second filter beyond "the browser ran the JS at all" (some
-crawlers execute JavaScript).
+from the client body (keeps the payload small and unspoofable-by-omission). Browsers named:
+Yandex Browser (`YaBrowser/`, the largest non-Chrome share of a Russian audience such as
+infraege.ru's), Edge, Opera, Firefox (including `FxiOS/` on iOS), Chrome (including `CriOS/` on iOS),
+Safari, else `Other` — checked in that order, since each of them also carries the tokens of the
+engines after it (Change 20). A server-side known-bot `User-Agent` pattern list is a second filter
+beyond "the browser ran the JS at all" (some crawlers execute JavaScript); it includes
+`Chrome-Lighthouse`, which Lighthouse and PageSpeed Insights send while loading the real
+production origin (Change 20; Change 18's origin rule only drops their local runs).
 
 **Tracking snippet** (`GET /track.js`, served by the app, no build step for the tracked site):
 listens for `pushState`/`replaceState`/`popstate` in addition to the initial load, so a
@@ -490,10 +500,11 @@ TanStack Router site, where every load counted twice. A hash-only change is not 
 
 **Storage.** `sites (id, name, domain, created_at)`. `pageviews (id, site_id, ts, path,
 referrer_domain, visitor_hash, browser, os, device)`, raw TTL shared with §4.5
-(`SMOTRYASHCHIY_RAW_RETENTION_DAYS`). `pageview_rollups_daily (site_id, day, path,
-unique_visitors, pageviews)`, primary key `(site_id, day, path)`, retained with the rollup TTL
-(§4.5) — daily, not hourly, because visitor-count questions ("how many yesterday") are asked at
-day granularity, unlike the metric rollups.
+(`SMOTRYASHCHIY_RAW_RETENTION_DAYS`). Every stats range (at most 30 days) fits inside the raw TTL,
+so stats read raw pageviews only. The daily rollup table `pageview_rollups_daily` that Change 14
+added was written hourly and never read; Change 20 removed its job and dropped the table with a
+forward-only migration (every row was derivable from raw pageviews). Longer ranges would bring a
+rollup back together with a reader for it.
 
 **Read API** (session required): `GET /api/sites` → `{"sites":[{id,name,domain,created_at}]}`;
 `POST /api/sites {name,domain}` → `201` site plus the ready-to-paste `<script>` tag (`400` invalid,

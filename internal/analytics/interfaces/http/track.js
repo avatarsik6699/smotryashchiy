@@ -15,14 +15,8 @@
     if (url === last) return;
     var referrer = last === null ? document.referrer : "";
     last = url;
-    var payload = JSON.stringify({
-      site: site,
-      url: url,
-      referrer: referrer,
-      title: document.title,
-      screen: (screen.width || 0) + "x" + (screen.height || 0),
-      language: navigator.language || "",
-    });
+    // Only what the server stores (docs/SPEC.md §4i): no title, screen or language.
+    var payload = JSON.stringify({ site: site, url: url, referrer: referrer });
     try {
       if (navigator.sendBeacon) {
         navigator.sendBeacon(

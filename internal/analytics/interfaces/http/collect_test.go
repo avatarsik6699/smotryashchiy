@@ -187,3 +187,22 @@ func TestCollectRateLimitRunsBeforeTheCORSLookup(t *testing.T) {
 		t.Fatalf("limited request got CORS header %q: the site lookup ran before the limit", got)
 	}
 }
+
+// Snippets before Change 20 also sent title, screen and language; such beacons are still stored
+// (the extra fields are ignored), so a cached old track.js keeps counting (docs/SPEC.md §4i).
+func TestCollectStillAcceptsBeaconsFromOlderSnippets(t *testing.T) {
+	srv, svc := newTestServer(t)
+	site, err := svc.CreateSite(t.Context(), domain.NewSite{Name: "A", Domain: "a.example"})
+	if err != nil {
+		t.Fatalf("CreateSite: %v", err)
+	}
+	old := `{"site":"` + site.ID + `","url":"/docs","referrer":"","title":"Docs","screen":"1920x1080","language":"ru-RU"}`
+	post(t, srv.URL+"/api/collect", "https://a.example", []byte(old))
+	stats, err := svc.Stats(t.Context(), site.ID, "today")
+	if err != nil {
+		t.Fatalf("Stats: %v", err)
+	}
+	if stats.Pageviews != 1 {
+		t.Fatalf("Pageviews = %d, want the old-format beacon stored", stats.Pageviews)
+	}
+}

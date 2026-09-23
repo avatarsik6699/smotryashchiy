@@ -11,7 +11,9 @@ import (
 	"math/big"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -116,4 +118,25 @@ func TestServeHTTPSServesTheAppOverTLS(t *testing.T) {
 		t.Fatalf("port %d still bound after Shutdown: %v", port, err)
 	}
 	ln.Close()
+}
+
+// Middleware runs in registration order: the first added is outermost (see Server.Use).
+func TestUseRunsMiddlewareInRegistrationOrder(t *testing.T) {
+	srv := New("unused:0")
+	var order []string
+	mark := func(name string) func(http.Handler) http.Handler {
+		return func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				order = append(order, name)
+				next.ServeHTTP(w, r)
+			})
+		}
+	}
+	srv.Use(mark("first"))
+	srv.Use(mark("second"))
+	srv.Mux.HandleFunc("GET /x", func(w http.ResponseWriter, _ *http.Request) { order = append(order, "mux") })
+	srv.Handler().ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/x", nil))
+	if strings.Join(order, ",") != "first,second,mux" {
+		t.Fatalf("order = %v, want first, second, mux", order)
+	}
 }

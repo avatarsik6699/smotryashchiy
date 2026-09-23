@@ -39,10 +39,8 @@ func newServer(t *testing.T, opts Options) (http.Handler, *application.Service) 
 	srv.Mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusTeapot) })
 	srv.Mux.HandleFunc("POST /api/private", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusCreated) })
 	srv.Mux.HandleFunc("POST /api/collect", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
-	var h http.Handler = srv.Mux
-	h = RequireSession(svc)(h)
-	h = GuardCrossOriginWrites()(h) // same order as cmd/smotryashchiy/server.go
-	return h, svc
+	Protect(srv, svc) // the production chain, not a hand-built one: its order is what is under test
+	return srv.Handler(), svc
 }
 
 func post(h http.Handler, path, body, remote string, headers ...string) *httptest.ResponseRecorder {

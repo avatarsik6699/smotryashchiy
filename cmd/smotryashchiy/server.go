@@ -100,8 +100,7 @@ func runServer(stdout io.Writer) error {
 	maintenance := telemetryapp.NewMaintenance(store, cfg.RawRetentionDays, cfg.RollupRetentionDays, time.Now)
 	go maintenance.Run(ctx)
 	srv.Mux.Handle("/", web.Handler()) // embedded SPA; the auth middleware keeps /api/ gated
-	srv.Use(authhttp.RequireSession(auth))
-	srv.Use(authhttp.GuardCrossOriginWrites()) // outermost: a foreign write is refused before the session check
+	authhttp.Protect(srv, auth)
 
 	serveErr := make(chan error, 1)
 	if cfg.TLSDomain != "" {

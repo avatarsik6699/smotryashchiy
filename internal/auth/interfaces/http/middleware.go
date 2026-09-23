@@ -10,6 +10,7 @@ import (
 	"github.com/avatarsik6699/smotryashchiy/internal/auth/application"
 	"github.com/avatarsik6699/smotryashchiy/internal/auth/domain"
 	"github.com/avatarsik6699/smotryashchiy/internal/platform/apierror"
+	"github.com/avatarsik6699/smotryashchiy/internal/platform/httpserver"
 )
 
 // publicAPIPaths are the only API routes exempt from session gating: login itself and agent
@@ -26,6 +27,14 @@ var publicAPIPaths = map[string]bool{
 
 // isAPIPath reports whether path belongs to the API namespace.
 func isAPIPath(path string) bool { return path == "/api" || strings.HasPrefix(path, "/api/") }
+
+// Protect registers the API's request guards on srv in the order docs/SPEC.md §4d requires: the
+// cross-origin write guard first (outermost), so a foreign write answers 403 whether or not it
+// carries a cookie, then session gating. The server and the tests both mount through here.
+func Protect(srv *httpserver.Server, svc *application.Service) {
+	srv.Use(GuardCrossOriginWrites())
+	srv.Use(RequireSession(svc))
+}
 
 // crossOriginExempt are the unsafe-method API routes a foreign page may call: the analytics beacon
 // (tracked sites post it cross-origin by design) and agent enrollment (a CLI, not a browser).

@@ -59,7 +59,7 @@ func (s *Server) Serve() error {
 func (s *Server) ServeHTTPS(addr string, tlsConfig *tls.Config) error {
 	s.httpServer = &http.Server{
 		Addr:              addr,
-		Handler:           s.chained(),
+		Handler:           withHSTS(s.chained()),
 		TLSConfig:         tlsConfig,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
@@ -68,6 +68,17 @@ func (s *Server) ServeHTTPS(addr string, tlsConfig *tls.Config) error {
 		return err
 	}
 	return nil
+}
+
+// hsts is sent on every response of the TLS listener only (docs/SPEC.md §4g). No includeSubDomains:
+// the UI's domain may be a subdomain of a site whose other subdomains the operator does not control.
+const hsts = "max-age=31536000"
+
+func withHSTS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Strict-Transport-Security", hsts)
+		next.ServeHTTP(w, r)
+	})
 }
 
 // Shutdown gracefully stops serving.

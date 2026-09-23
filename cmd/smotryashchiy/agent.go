@@ -112,7 +112,7 @@ func runAgentLoop(ctx context.Context, args []string) error {
 			collect.Network{Proc: collect.DefaultProc},
 			collect.Load{Proc: collect.DefaultProc},
 			collect.Uptime{Proc: collect.DefaultProc},
-			collect.NewDocker(""),
+			collect.NewDocker("").WithDeadline(*interval),
 		},
 		CheckCollectors: []collect.CheckCollector{
 			collect.NewFail2banStatus(),

@@ -66,6 +66,10 @@ type journaldLine struct {
 	Priority string `json:"PRIORITY"`
 	Unit     string `json:"_SYSTEMD_UNIT"`
 	RealTime string `json:"__REALTIME_TIMESTAMP"` // microseconds since epoch
+	// Container is set on lines Docker's journald log driver writes; the Docker-logs source owns
+	// those (docs/SPEC.md §4h).
+	Container  string `json:"CONTAINER_NAME"`
+	Identifier string `json:"SYSLOG_IDENTIFIER"`
 }
 
 func (j *Journald) readLoop(stdout io.Reader) {
@@ -76,6 +80,9 @@ func (j *Journald) readLoop(stdout io.Reader) {
 		if err := json.Unmarshal(scanner.Bytes(), &line); err != nil {
 			continue // one malformed line must not stop the tail
 		}
+		if line.Container != "" {
+			continue // already forwarded by the Docker-logs source; a second copy would double it
+		}
 		if isRoutineHealthCheck(line.Message) {
 			continue // docs/SPEC.md §4h: routine 2xx health-check polling is not forwarded
 		}
@@ -84,8 +91,8 @@ func (j *Journald) readLoop(stdout io.Reader) {
 			ts = time.UnixMicro(us)
 		}
 		labels := map[string]string{}
-		if line.Unit != "" {
-			labels["unit"] = line.Unit
+		if unit := sourceUnit(line); unit != "" {
+			labels["unit"] = unit
 		}
 		ev := Event{TS: ts, Level: journaldLevel(line.Priority), Message: truncateMessage(line.Message), Labels: labels}
 		j.mu.Lock()
@@ -95,6 +102,16 @@ func (j *Journald) readLoop(stdout io.Reader) {
 	if err := scanner.Err(); err != nil {
 		j.setFailed(err)
 	}
+}
+
+// sourceUnit is the entry's systemd unit, or, for entries outside any unit (kernel messages such
+// as "[UFW BLOCK]"), its syslog identifier, so the EVENTS source filter can target them
+// (docs/SPEC.md §4h).
+func sourceUnit(line journaldLine) string {
+	if line.Unit != "" {
+		return line.Unit
+	}
+	return line.Identifier
 }
 
 // journaldLevel maps a syslog priority (0=emerg..7=debug) to the wire event levels (docs/SPEC.md

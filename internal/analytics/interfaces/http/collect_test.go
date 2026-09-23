@@ -154,3 +154,36 @@ func TestCollectRateLimitsPerSourceIP(t *testing.T) {
 		t.Fatal("want at least the burst allowance stored")
 	}
 }
+
+func TestCollectCORSAcceptsTheWWWVariantLikeStorage(t *testing.T) {
+	srv, svc := newTestServer(t)
+	site, err := svc.CreateSite(t.Context(), domain.NewSite{Name: "A", Domain: "a.example"})
+	if err != nil {
+		t.Fatalf("CreateSite: %v", err)
+	}
+	resp := post(t, srv.URL+"/api/collect", "https://www.a.example", []byte(`{"site":"`+site.ID+`","url":"/"}`))
+	if got := resp.Header.Get("Access-Control-Allow-Origin"); got != "https://www.a.example" {
+		t.Fatalf("CORS header = %q, want the www. origin echoed back", got)
+	}
+}
+
+// The rate limit is checked before any database work (docs/SPEC.md §4i): a limited request never
+// reaches the CORS site lookup, so it carries no CORS header even from a registered origin.
+func TestCollectRateLimitRunsBeforeTheCORSLookup(t *testing.T) {
+	srv, svc := newTestServer(t)
+	site, err := svc.CreateSite(t.Context(), domain.NewSite{Name: "A", Domain: "a.example"})
+	if err != nil {
+		t.Fatalf("CreateSite: %v", err)
+	}
+	body := []byte(`{"site":"` + site.ID + `","url":"/"}`)
+	var last *http.Response
+	for range collectRateLimit.burst + 1 {
+		last = post(t, srv.URL+"/api/collect", "https://a.example", body)
+	}
+	if last.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", last.StatusCode)
+	}
+	if got := last.Header.Get("Access-Control-Allow-Origin"); got != "" {
+		t.Fatalf("limited request got CORS header %q: the site lookup ran before the limit", got)
+	}
+}

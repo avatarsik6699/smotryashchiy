@@ -108,3 +108,38 @@ func TestJournaldCollectFailsWhenJournalctlIsMissing(t *testing.T) {
 	}
 	t.Fatal("want Collect to eventually report an error when journalctl is missing")
 }
+
+// Journal lines in the shapes seen on infraege.ru in the 2026-09-23 audit (docs/SPEC.md §4h): a
+// container line from Docker's journald log driver (owned by the Docker-logs source, so skipped
+// here), a kernel UFW line outside any unit (labeled by its syslog identifier) and a unit line.
+func TestJournaldSkipsContainerLinesAndLabelsKernelLines(t *testing.T) {
+	fakeJournalctl(t, []string{
+		`{"MESSAGE":"[warn] upstream response is buffered","PRIORITY":"3","_SYSTEMD_UNIT":"docker.service","CONTAINER_NAME":"infraege-nginx-1","SYSLOG_IDENTIFIER":"infraege/infraege-nginx-1","__REALTIME_TIMESTAMP":"1758537600000000"}`,
+		`{"MESSAGE":"[UFW BLOCK] IN=ens3 SRC=203.0.113.9 DPT=2222","PRIORITY":"4","SYSLOG_IDENTIFIER":"kernel","__REALTIME_TIMESTAMP":"1758537601000000"}`,
+		`{"MESSAGE":"Failed password for root","PRIORITY":"6","_SYSTEMD_UNIT":"ssh.service","SYSLOG_IDENTIFIER":"sshd","__REALTIME_TIMESTAMP":"1758537602000000"}`,
+		`{"MESSAGE":"no source at all","PRIORITY":"6","__REALTIME_TIMESTAMP":"1758537603000000"}`,
+	})
+	j := NewJournald(t.Context())
+
+	var events []Event
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && len(events) < 3 {
+		got, err := j.Collect()
+		if err != nil {
+			t.Fatalf("Collect: %v", err)
+		}
+		events = append(events, got...)
+		time.Sleep(10 * time.Millisecond)
+	}
+	if len(events) != 3 {
+		t.Fatalf("got %d events, want 3 (the container line skipped): %+v", len(events), events)
+	}
+	for i, want := range []string{"kernel", "ssh.service", ""} {
+		if got := events[i].Labels["unit"]; got != want {
+			t.Errorf("event %d %q: unit = %q, want %q", i, events[i].Message, got, want)
+		}
+	}
+	if _, ok := events[2].Labels["unit"]; ok {
+		t.Error("an entry with neither _SYSTEMD_UNIT nor SYSLOG_IDENTIFIER must stay unlabeled")
+	}
+}

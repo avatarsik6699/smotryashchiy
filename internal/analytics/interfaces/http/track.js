@@ -7,15 +7,18 @@
   var origin = s.src.replace(/\/track\.js.*$/, "");
   var last = null;
   function send() {
-    var url = location.pathname + location.search;
-    // A pageview is a URL change, not a history call: routers call replaceState with the same URL
-    // on hydration and for scroll/state bookkeeping (docs/SPEC.md §4i).
+    // A pageview is a pathname change, not a history call: routers call replaceState with the same
+    // URL on hydration and for scroll/state bookkeeping. The query string is neither counted nor
+    // sent (it can carry tokens), and document.referrer, which client-side navigation never
+    // changes, goes only with the first pageview of a page load (docs/SPEC.md §4i).
+    var url = location.pathname;
     if (url === last) return;
+    var referrer = last === null ? document.referrer : "";
     last = url;
     var payload = JSON.stringify({
       site: site,
       url: url,
-      referrer: document.referrer,
+      referrer: referrer,
       title: document.title,
       screen: (screen.width || 0) + "x" + (screen.height || 0),
       language: navigator.language || "",

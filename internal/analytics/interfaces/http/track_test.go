@@ -32,7 +32,7 @@ const history = {
 const ctx = vm.createContext({
   document: {
     currentScript: { src: "https://collector.test/track.js", getAttribute: (n) => (n === "data-site" ? "site-1" : null) },
-    referrer: "", title: "T",
+    referrer: "https://ref.test/from?q=1", title: "T",
   },
   location: loc, history, screen: { width: 1, height: 1 },
   navigator: { language: "ru", sendBeacon: (url, blob) => { beacons.push({ url, blob }); return true; } },
@@ -58,7 +58,7 @@ const steps = [
       if (b.url !== "https://collector.test/api/collect") throw new Error("beacon to " + b.url);
       const body = JSON.parse(await b.blob.text());
       if (body.site !== "site-1") throw new Error("beacon for site " + body.site);
-      sent.push(body.url);
+      sent.push(body.url + " ref=" + body.referrer);
     }
     out.push({ step: name, sent });
   }
@@ -66,7 +66,9 @@ const steps = [
 })().catch((e) => { console.error(e); process.exit(1); });
 `
 
-func TestTrackJSCountsURLChangesNotHistoryCalls(t *testing.T) {
+// Each sent entry is "<url> ref=<referrer>": the pathname only, and the page load's referrer only on
+// its first pageview (docs/SPEC.md §4i).
+func TestTrackJSCountsPathChangesNotHistoryCalls(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node not installed: the tracking snippet's behavior test needs a JS runtime")
@@ -112,13 +114,13 @@ func TestTrackJSCountsURLChangesNotHistoryCalls(t *testing.T) {
 		t.Fatalf("harness output %q: %v", out, err)
 	}
 	want := map[string][]string{
-		"load":                                  {"/"},
+		"load":                                  {"/ ref=https://ref.test/from?q=1"},
 		"same-url replaceState (hydration)":     {},
 		"replaceState without url (state only)": {},
-		"pushState new path":                    {"/ege"},
-		"replaceState new search":               {"/ege?topic=5"},
+		"pushState new path":                    {"/ege ref="},
+		"replaceState new search":               {},
 		"hash-only pushState":                   {},
-		"popstate back":                         {"/"},
+		"popstate back":                         {"/ ref="},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("got %d steps, want %d: %+v", len(got), len(want), got)

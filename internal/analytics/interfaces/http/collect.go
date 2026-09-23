@@ -49,11 +49,12 @@ func (h *CollectHandlers) Register(mux *http.ServeMux) {
 // stored pageview to anything probing this endpoint.
 func (h *CollectHandlers) collect(w http.ResponseWriter, r *http.Request) {
 	ip := h.clientIP(r)
-	h.setCORS(w, r)
-	if !h.limiter.Allow(ip) {
+	// The limit comes first: a limited request must cost no database work (docs/SPEC.md §4i).
+	if !h.limiter.Allow(ratelimit.ClientKey(ip)) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
+	h.setCORS(w, r)
 	var b domain.Beacon
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxCollectBody)).Decode(&b); err != nil {
 		w.WriteHeader(http.StatusNoContent)
@@ -63,8 +64,8 @@ func (h *CollectHandlers) collect(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// setCORS allows the response to be read cross-origin only when the request's Origin matches a
-// registered site's domain — not a security boundary (a non-browser client ignores CORS
+// setCORS allows the response to be read cross-origin only when the request's Origin is a
+// registered site's domain or www. plus it (the same rule that decides storage) — not a security boundary (a non-browser client ignores CORS
 // entirely), just keeps a legitimate embed's fetch fallback console-clean.
 func (h *CollectHandlers) setCORS(w http.ResponseWriter, r *http.Request) {
 	host := originHostname(r)
@@ -76,7 +77,7 @@ func (h *CollectHandlers) setCORS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, site := range sites {
-		if strings.EqualFold(site.Domain, host) {
+		if application.OriginMatchesSite(host, site.Domain) {
 			w.Header().Set("Access-Control-Allow-Origin", r.Header.Get("Origin"))
 			w.Header().Set("Vary", "Origin")
 			return

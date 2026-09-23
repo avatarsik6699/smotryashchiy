@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { useSiteStats } from '../../data/useSiteStats'
 import type { SiteDTO, StatsRange } from '../../domain/types'
 import styles from './SiteDetails.module.css'
@@ -20,15 +20,22 @@ interface SiteDetailsProps {
 export function SiteDetails({ site }: SiteDetailsProps) {
   const [range, setRange] = useState<StatsRange>('today')
   const data = useSiteStats(site.id, range)
+  const utcNoteId = useId()
 
   return (
     <div className={styles.details}>
-      <div className={styles.rangeToggle} role="group" aria-label="Time range">
-        {RANGES.map((r) => (
-          <button key={r.value} type="button" className={styles.rangeButton} data-active={range === r.value} onClick={() => setRange(r.value)}>
-            {r.label}
-          </button>
-        ))}
+      <div className={styles.rangeBar}>
+        <div className={styles.rangeToggle} role="group" aria-label="Time range" aria-describedby={utcNoteId}>
+          {RANGES.map((r) => (
+            <button key={r.value} type="button" className={styles.rangeButton} data-active={range === r.value} onClick={() => setRange(r.value)}>
+              {r.label}
+            </button>
+          ))}
+        </div>
+        {/* Ranges are UTC calendar days (docs/SPEC.md §4i); east of UTC "today" is not the local day. */}
+        <span id={utcNoteId} className={styles.muted}>
+          days in UTC
+        </span>
       </div>
 
       {data.status === 'loading' && (

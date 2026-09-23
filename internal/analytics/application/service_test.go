@@ -12,6 +12,7 @@ type fakeRepo struct {
 	sites     map[string]domain.Site
 	pageviews []domain.Pageview
 	salt      string
+	since     time.Time // the last Stats call's lower bound
 }
 
 func newFakeRepo() *fakeRepo {
@@ -39,7 +40,8 @@ func (f *fakeRepo) InsertPageview(_ context.Context, p domain.Pageview) error {
 	f.pageviews = append(f.pageviews, p)
 	return nil
 }
-func (f *fakeRepo) Stats(context.Context, string, time.Time) (domain.Stats, error) {
+func (f *fakeRepo) Stats(_ context.Context, _ string, since time.Time) (domain.Stats, error) {
+	f.since = since
 	return domain.Stats{}, nil
 }
 func (f *fakeRepo) DailySaltBase(context.Context) (string, error)               { return f.salt, nil }
@@ -191,6 +193,61 @@ func TestParseUserAgent(t *testing.T) {
 		browser, os, device := parseUserAgent(c.ua)
 		if browser != c.browser || os != c.os || device != c.device {
 			t.Errorf("parseUserAgent(%q) = (%q,%q,%q), want (%q,%q,%q)", c.ua, browser, os, device, c.browser, c.os, c.device)
+		}
+	}
+}
+
+// The stored path is the pathname only, also when an old snippet still sends a query or fragment
+// (docs/SPEC.md §4i); the site's own domain is not a referrer.
+func TestCollectStoresPathnameOnlyAndOnlyExternalReferrers(t *testing.T) {
+	now := time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC)
+	for _, c := range []struct {
+		url, referrer, wantPath, wantRef string
+	}{
+		{"/?_=1790150776977", "", "/", ""},
+		{"/reset?token=secret&email=a@b.c", "", "/reset", ""},
+		{"/docs#intro", "", "/docs", ""},
+		{"?x=1", "", "/", ""},
+		{"/courses", "https://infraege.ru/", "/courses", ""},
+		{"/courses", "https://WWW.infraege.ru/ege", "/courses", ""},
+		{"/courses", "https://yandex.ru/search/?text=ege", "/courses", "yandex.ru"},
+		{"/courses", "https://sub.infraege.ru/", "/courses", "sub.infraege.ru"},
+	} {
+		repo := newFakeRepo()
+		repo.sites["s"] = domain.Site{ID: "s", Domain: "infraege.ru"}
+		svc := NewService(repo, func() time.Time { return now }, Options{})
+		_, err := svc.Collect(context.Background(), domain.Beacon{Site: "s", URL: c.url, Referrer: c.referrer},
+			"203.0.113.5", "Mozilla/5.0 (Windows NT 10.0) Chrome/120.0", "infraege.ru")
+		if err != nil || len(repo.pageviews) != 1 {
+			t.Fatalf("%q: err=%v stored=%d", c.url, err, len(repo.pageviews))
+		}
+		if pv := repo.pageviews[0]; pv.Path != c.wantPath || pv.ReferrerDomain != c.wantRef {
+			t.Errorf("url %q referrer %q: path=%q ref=%q, want %q %q", c.url, c.referrer, pv.Path, pv.ReferrerDomain, c.wantPath, c.wantRef)
+		}
+	}
+}
+
+// Ranges are UTC calendar days, today included (docs/SPEC.md §4i), including right around midnight.
+func TestStatsRangesAreUTCCalendarDays(t *testing.T) {
+	for _, c := range []struct {
+		now   time.Time
+		rng   string
+		since time.Time
+	}{
+		{time.Date(2026, 9, 23, 0, 1, 0, 0, time.UTC), "today", time.Date(2026, 9, 23, 0, 0, 0, 0, time.UTC)},
+		{time.Date(2026, 9, 22, 23, 59, 0, 0, time.UTC), "today", time.Date(2026, 9, 22, 0, 0, 0, 0, time.UTC)},
+		{time.Date(2026, 9, 23, 3, 0, 0, 0, time.FixedZone("MSK", 3*3600)), "today", time.Date(2026, 9, 23, 0, 0, 0, 0, time.UTC)},
+		{time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC), "", time.Date(2026, 9, 23, 0, 0, 0, 0, time.UTC)},
+		{time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC), "7d", time.Date(2026, 9, 17, 0, 0, 0, 0, time.UTC)},
+		{time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC), "30d", time.Date(2026, 8, 25, 0, 0, 0, 0, time.UTC)},
+	} {
+		repo := newFakeRepo()
+		svc := NewService(repo, func() time.Time { return c.now }, Options{})
+		if _, err := svc.Stats(context.Background(), "s", c.rng); err != nil {
+			t.Fatal(err)
+		}
+		if !repo.since.Equal(c.since) {
+			t.Errorf("now %s range %q: since %s, want %s", c.now, c.rng, repo.since.UTC(), c.since)
 		}
 	}
 }

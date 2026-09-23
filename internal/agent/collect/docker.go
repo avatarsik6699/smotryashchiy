@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -20,7 +21,17 @@ const DefaultDockerSocket = "/var/run/docker.sock"
 type Docker struct {
 	socketPath string
 	client     *http.Client
+	deadline   time.Duration
 }
+
+// Stats concurrency (docs/SPEC.md §4h): one stats?stream=false call blocks ~2 s while Docker samples
+// CPU twice, so reading containers one by one made a tick outlast the interval.
+const (
+	dockerStatsInFlight    = 8
+	DefaultDockerDeadline  = 5 * time.Second
+	minDockerStatsDeadline = time.Second
+	dockerDeadlineHeadroom = time.Second
+)
 
 // NewDocker builds a collector talking to socketPath ("" defaults to DefaultDockerSocket).
 func NewDocker(socketPath string) *Docker {
@@ -29,6 +40,7 @@ func NewDocker(socketPath string) *Docker {
 	}
 	return &Docker{
 		socketPath: socketPath,
+		deadline:   DefaultDockerDeadline,
 		client: &http.Client{
 			Timeout: 5 * time.Second,
 			Transport: &http.Transport{
@@ -39,6 +51,13 @@ func NewDocker(socketPath string) *Docker {
 			},
 		},
 	}
+}
+
+// WithDeadline bounds one tick's collection to min(interval − 1 s, 5 s), so the collector never
+// makes a tick outlast the agent's interval (docs/SPEC.md §4h).
+func (d *Docker) WithDeadline(interval time.Duration) *Docker {
+	d.deadline = min(max(interval-dockerDeadlineHeadroom, minDockerStatsDeadline), DefaultDockerDeadline)
+	return d
 }
 
 func (*Docker) Name() string { return "docker" }
@@ -74,36 +93,61 @@ type dockerStats struct {
 	MemoryStats dockerMemoryStats `json:"memory_stats"`
 }
 
-// Collect lists running containers and reads each one's resource usage. A single container's
-// stats failing (e.g. it exited between the list and the stats call) is skipped, not fatal to the
-// whole tick; only an unreachable daemon fails the collector outright.
+// Collect lists running containers and reads their resource usage concurrently (at most
+// dockerStatsInFlight at a time) under the tick's deadline. A single container's stats failing
+// (e.g. it exited between the list and the stats call) or missing the deadline is skipped for this
+// tick, not fatal to it — never a zero or a stale repeat; only an unreachable daemon fails the
+// collector outright.
 func (d *Docker) Collect() ([]Sample, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), d.deadline)
+	defer cancel()
 	var containers []dockerContainer
-	if err := d.get("/containers/json", &containers); err != nil {
+	if err := d.get(ctx, "/containers/json", &containers); err != nil {
 		return nil, fmt.Errorf("docker: list containers: %w", err)
 	}
-	var samples []Sample
-	for _, c := range containers {
-		var stats dockerStats
-		if err := d.get("/containers/"+c.ID+"/stats?stream=false", &stats); err != nil {
-			continue
-		}
-		labels := map[string]string{"container": containerName(c), "image": c.Image}
-		if pct, ok := cpuPercent(stats); ok {
-			samples = append(samples, Sample{Name: "docker.container.cpu_percent", Value: pct, Labels: labels})
-		}
-		if stats.MemoryStats.Limit > 0 {
-			used := stats.MemoryStats.Usage
-			if stats.MemoryStats.Stats.Cache < used {
-				used -= stats.MemoryStats.Stats.Cache // working set, not raw cgroup usage (which includes reclaimable page cache)
+	results := make([][]Sample, len(containers))
+	sem := make(chan struct{}, dockerStatsInFlight)
+	var wg sync.WaitGroup
+	for i, c := range containers {
+		wg.Go(func() {
+			select {
+			case sem <- struct{}{}:
+			case <-ctx.Done():
+				return
 			}
-			samples = append(samples,
-				Sample{Name: "docker.container.memory_used_bytes", Value: float64(used), Labels: labels},
-				Sample{Name: "docker.container.memory_used_percent", Value: float64(used) / float64(stats.MemoryStats.Limit) * 100, Labels: labels},
-			)
-		}
+			defer func() { <-sem }()
+			var stats dockerStats
+			if err := d.get(ctx, "/containers/"+c.ID+"/stats?stream=false", &stats); err != nil {
+				return
+			}
+			results[i] = containerSamples(c, stats)
+		})
+	}
+	wg.Wait()
+	var samples []Sample
+	for _, r := range results {
+		samples = append(samples, r...)
 	}
 	return samples, nil
+}
+
+func containerSamples(c dockerContainer, stats dockerStats) []Sample {
+	var samples []Sample
+	labels := map[string]string{"container": containerName(c), "image": c.Image}
+	if pct, ok := cpuPercent(stats); ok {
+		samples = append(samples, Sample{Name: "docker.container.cpu_percent", Value: pct, Labels: labels})
+	}
+	if stats.MemoryStats.Limit > 0 {
+		used := stats.MemoryStats.Usage
+		if stats.MemoryStats.Stats.Cache < used {
+			used -= stats.MemoryStats.Stats.Cache // working set, not raw cgroup usage (which includes reclaimable page cache)
+		}
+		samples = append(samples,
+			Sample{Name: "docker.container.memory_used_bytes", Value: float64(used), Labels: labels},
+			Sample{Name: "docker.container.memory_used_percent", Value: float64(used) / float64(stats.MemoryStats.Limit) * 100, Labels: labels},
+		)
+	}
+	return samples
 }
 
 func containerName(c dockerContainer) string {
@@ -132,8 +176,8 @@ func cpuPercent(s dockerStats) (float64, bool) {
 	return (cpuDelta / sysDelta) * cpus * 100, true
 }
 
-func (d *Docker) get(path string, out any) error {
-	req, err := http.NewRequest(http.MethodGet, "http://docker"+path, nil)
+func (d *Docker) get(ctx context.Context, path string, out any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://docker"+path, nil)
 	if err != nil {
 		return err
 	}

@@ -314,3 +314,31 @@ Carry these into the first contract tests instead of rediscovering them in produ
 
   Retry once on `continue`; if the same error repeats, stop and ask the user to confirm the fix.
 - **Prevention**: run containers with a matching UID/GID or use named volumes.
+
+### `SameSite=Lax` does not stop a same-site subdomain from writing
+
+- **Symptoms**: a page on another subdomain of the UI's registrable domain (`evil.infraege.ru` for a
+  UI on `sre.infraege.ru`) creates uptime targets or sites through the operator's session.
+- **Root cause**: "site" means registrable domain, so every subdomain is same-site and gets the Lax
+  cookie on a POST; a `text/plain` body is a CORS-simple request, so no preflight stops it; and Go's
+  `json.Decoder` does not care about `Content-Type`.
+- **Fix**: `authhttp.GuardCrossOriginWrites` (docs/SPEC.md §4d) refuses unsafe-method `/api/*` writes
+  from any other origin and requires `application/json`. A new public write route must be added to
+  its `crossOriginExempt` list deliberately, like `/api/collect`.
+
+### Docker's `journald` log driver duplicates container lines into the journal
+
+- **Symptoms**: every container log line shows up twice in EVENTS, once labeled `container=…` and once
+  `unit=docker.service`, often with different levels.
+- **Root cause**: with `"log-driver": "journald"` Docker writes container output to the journal (with a
+  `CONTAINER_NAME` field), and the Docker-logs source reads the same lines through the Docker API.
+- **Fix**: the journald source skips entries carrying `CONTAINER_NAME` (docs/SPEC.md §4h). Check a host's
+  driver with `docker info --format '{{.LoggingDriver}}'`.
+
+### Docker `stats?stream=false` blocks ~2 s per container
+
+- **Symptoms**: `agent run --interval 10s` delivers every ~18 s on a host with 9 containers.
+- **Root cause**: a one-shot stats call waits for a second CPU sample; read one by one they add up, and
+  Go's ticker drops ticks that fire while a tick is still collecting.
+- **Fix**: the Docker collector reads stats concurrently under a per-tick deadline (docs/SPEC.md §4h).
+  Measured on infraege.ru: 17.8 s serial vs 2.0 s parallel for 9 containers.

@@ -7,7 +7,7 @@
 
 | Field | Value |
 |-------|-------|
-| Document Version | `v1.18` |
+| Document Version | `v1.19` |
 | Date | `2026-09-23` |
 | Architect / Owner | `avatarsik666@gmail.com` |
 | Stack | See [docs/STACK.md](./STACK.md) |
@@ -259,6 +259,18 @@ All routes below except static assets require the session cookie.
   return `index.html` (SPA fallback, `no-cache`), `/assets/*` are content-hashed (`immutable`, 1 year).
   Everything under `/api/` keeps §3's rules: session required except `POST /api/auth/login`,
   `GET /api/auth/session` and `POST /api/enroll`. Unknown `/api/*` paths answer `401`/`404` JSON, never `index.html`.
+- **Cross-origin write guard (Change 19).** `SameSite=Lax` does not stop a *same-site* page (any
+  subdomain of the operator's registrable domain, e.g. `infraege.ru` for a UI on `sre.infraege.ru`) from
+  riding the session cookie on a POST, and a `text/plain` body needs no CORS preflight — found in the
+  2026-09-23 production audit (a `text/plain` POST from another subdomain created an uptime target and a
+  site). Every `/api/*` request with a method other than `GET`/`HEAD`/`OPTIONS`, except `POST /api/collect`
+  and `POST /api/enroll`, is refused with `403` JSON before its handler runs when either: its
+  `Sec-Fetch-Site` header is present and not `same-origin` or `none`; or it has no `Sec-Fetch-Site` and
+  its `Origin` header is present and its host is not the request's `Host` (host only, like the WebSocket
+  check: TLS may end at a trusted proxy, so the server's scheme is not the browser's; `null` is refused). A request that
+  carries a body must also declare `Content-Type: application/json` (`415` JSON otherwise). A request
+  with neither header (a non-browser client) passes the origin rule; it cannot hold a browser's cookie.
+  Login is covered too (login CSRF).
 - **Security headers** on static responses: `Content-Security-Policy: default-src 'self';
   connect-src 'self'; img-src 'self' data:; style-src 'self'; frame-ancestors 'none'`,
   `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`.
@@ -333,7 +345,10 @@ The server probes operator-defined **targets** itself; nothing runs on the monit
   `SMOTRYASHCHIY_ACME_CA=staging` selects Let's Encrypt's staging CA (untrusted certs, no rate limit)
   for testing a new domain before switching back to the default production CA. `/health/ready` is
   mounted on both listeners (unencrypted on the ACME port too), so `healthcheck` never depends on a
-  certificate being ready yet. No low ports are bound in-process: operators map host `80`→container
+  certificate being ready yet. Every response on the TLS listener carries
+  `Strict-Transport-Security: max-age=31536000` (no `includeSubDomains`: the UI's domain may be a
+  subdomain of a site whose other subdomains the operator does not control; Change 19). The plain
+  ACME/redirect listener never sends it. No low ports are bound in-process: operators map host `80`→container
   `8080` and host `443`→container `8443` (`deploy/docker-compose.acme.yml`), so the nonroot user needs
   no capability. **Production mode** now accepts either this (TLS domain set) or the Change 09 path
   (a trusted reverse proxy: `SECURE_COOKIES=true` and `TRUSTED_PROXY_CIDRS` set) — never neither.
@@ -364,6 +379,12 @@ placeholder row.
   longer refreshed within the query window, no separate "container removed" signal is needed).
   Missing/unreadable socket (no Docker installed, or the agent's user lacks access) disables this
   collector for the run, logged once, like any other collector failure.
+  **Collection time (Change 19).** A `stats?stream=false` call blocks ~2 s while Docker samples CPU
+  twice, so calling it container by container made one tick take ~18 s with 9 containers on
+  infraege.ru, and the agent delivered every ~18 s instead of every `--interval` (the ticker drops
+  ticks that fire during a slow collection). Stats are fetched concurrently, at most 8 at a time,
+  under a per-tick deadline of `min(interval − 1 s, 5 s)`. A container whose stats have not arrived
+  by the deadline is omitted for that tick (not a zero, not a stale repeat).
 - **Log/event collection** (journald + Docker container logs): tailed continuously (not polled),
   forwarded as `events` (§4.1) with `level` mapped from syslog priority (`err`/`crit`+ → `error`,
   `warning` → `warn`, else `info`), `message` truncated to the existing 2048-byte cap, and labels
@@ -374,6 +395,14 @@ placeholder row.
   dependency, matches the "no third-party agent library" rule already applied to host metrics in
   §4c); a source that cannot be tailed (journald absent, e.g. non-systemd hosts) disables that part
   of the collector, logged once.
+  **Source ownership and labels (Change 19).** With Docker's `journald` log driver (infraege.ru's
+  setting) every container line also lands in the journal as `_SYSTEMD_UNIT=docker.service` with a
+  `CONTAINER_NAME` field, so the same line was forwarded twice — once per source, with different
+  levels. The journald source skips any entry that carries `CONTAINER_NAME`; container output is
+  owned by the Docker-logs source. An entry without `_SYSTEMD_UNIT` (kernel messages such as
+  `[UFW BLOCK]`, which made up 177 of the newest 500 events in production) is labeled
+  `unit=<SYSLOG_IDENTIFIER>` (e.g. `unit=kernel`) so the EVENTS source filter (§5) can target it; an
+  entry with neither field stays unlabeled.
 - **fail2ban signals**: ban/unban lines tailed from fail2ban's own log file are forwarded as
   `events` (`level=warn` for a ban, `info` for an unban, `message` e.g. `"Ban 203.0.113.7"`, labels
   `jail`). Per-jail status (currently banned count) is a `checks` row per jail,
@@ -416,10 +445,12 @@ same real visitor gets an unlinkable hash on the next day — this is the one th
 "unique visitors" and "pageviews per visit" computable without tracking anyone across days. The raw
 IP is used only to compute this hash for the current request and is never stored. `referrer` is
 reduced to its hostname before storage (a full referrer URL can itself leak PII, e.g. search terms
-in the query string).
+in the query string). For the same reason the stored page `path` is the URL's pathname only: the
+query string and fragment are dropped server-side (Change 19; production stored a cache-buster
+`/?_=1790150776977` as its own top page, and a query string can carry tokens or e-mail addresses).
 
 **Wire contract.** `POST /api/collect` (public, unauthenticated, CORS-enabled for a request's
-`Origin` only when it matches a registered site's domain): `{"site":"<site id>","url":"/path?query",
+`Origin` only when its hostname is a registered site's domain or `www.` plus it): `{"site":"<site id>","url":"/path",
 "referrer":"https://…" ,"title":"…","screen":"1920x1080","language":"en-US"}` — `site` and `url`
 required, `url` ≤ 2048 bytes, others optional and capped similarly. A beacon is stored only when
 the request's `Origin` hostname is the site's `domain` or `www.` plus it (Change 18). Browsers send
@@ -433,6 +464,15 @@ of outcome (an unknown `site`, a bot match, an origin mismatch or a malformed bo
 endpoint must never let a prober distinguish "site exists" from "site does not," unlike the
 session-gated APIs elsewhere. Rate-limited per source IP (reusing `internal/platform/ratelimit`,
 the same mechanism as the login limiter) since it is the one write path with no auth at all.
+The limit is checked before any database work (including the CORS site lookup). Limiter keys are
+an IPv4 address or an IPv6 `/64` prefix (one IPv6 client usually holds a whole `/64`, so a per-address
+key is trivially bypassed), and the limiter holds at most 10 000 keys: when full it drops idle keys
+first and then the least recently seen ones, so a flood from many sources cannot grow memory without
+bound (Change 19; applies to every `ratelimit` user).
+**Referrer per visit (Change 19).** `document.referrer` does not change on client-side navigation, so
+sending it with every pageview counted one external visit once per page viewed. The snippet sends
+`referrer` only with the first pageview of a page load; the server also drops a referrer whose
+hostname is the site's own domain or `www.` plus it (internal navigation is not a referral).
 `browser`/`os`/`device` are derived server-side from the `User-Agent` request header, never taken
 from the client body (keeps the payload small and unspoofable-by-omission). A server-side
 known-bot `User-Agent` pattern list is a second filter beyond "the browser ran the JS at all" (some
@@ -441,8 +481,10 @@ crawlers execute JavaScript).
 **Tracking snippet** (`GET /track.js`, served by the app, no build step for the tracked site):
 listens for `pushState`/`replaceState`/`popstate` in addition to the initial load, so a
 client-side-routed page change is its own pageview — the entire reason this change exists. A
-pageview is a change of `pathname + search`, not a history call: the snippet remembers the last
-URL it sent and ignores any history call that leaves it unchanged (Change 16). Client routers call
+pageview is a change of `pathname`, not a history call: the snippet remembers the last pathname it
+sent and ignores any history call that leaves it unchanged (Change 16; `search` stopped counting in
+Change 19, since the query string is no longer sent or stored and a query-only change would repeat
+the same path). Client routers call
 `replaceState` with the same URL on hydration and for scroll/state bookkeeping — found live on a
 TanStack Router site, where every load counted twice. A hash-only change is not a pageview either.
 
@@ -457,7 +499,12 @@ day granularity, unlike the metric rollups.
 `POST /api/sites {name,domain}` → `201` site plus the ready-to-paste `<script>` tag (`400` invalid,
 `409` duplicate domain); `DELETE /api/sites/{id}` → `204`, pageviews deleted with it; `GET
 /api/sites/{id}/stats?range=today|7d|30d` → `{pageviews, visitors, top_pages:[{path,count}],
-top_referrers:[{domain,count}]}`.
+top_referrers:[{domain,count}]}`. Ranges are UTC calendar days, not rolling windows (Change 19;
+`today` used to mean "the last 24 h", which mislabeled yesterday evening as today): `today` counts
+from 00:00 UTC of the current day, `7d` and `30d` from 00:00 UTC of the day 6 or 29 days earlier,
+i.e. the last 7 or 30 calendar days including today. `visitors` over several days is the number of
+distinct daily visitor hashes, so one person visiting on three days counts three times (the hash
+rotates daily by design).
 
 **Deferred, not in Changes 14–15:** IP geolocation/country breakdown (needs a GeoIP dependency,
 §1.3); live pageview counts over the WebSocket stream (§4.6) — Change 15's Analytics view uses the
@@ -500,7 +547,8 @@ view). A **SITES** ledger (same Accordion pattern as HOSTS): each row shows name
 pageviews and unique visitors; activating one expands in place to text ledgers for the selected
 range (today/7d/30d, a small text toggle — the one exception to "the window is fixed," since a
 day-granularity domain has no sensible single fixed window) — pageviews, unique visitors, top 10
-pages, top 10 referrers. No charts yet (§4i defers them). `+ add site` opens a dialog (name, domain)
+pages, top 10 referrers. The detail states that ranges are UTC days (muted text, e.g. `days in UTC`),
+since an operator east of UTC otherwise reads "today" as their local day (Change 19). No charts yet (§4i defers them). `+ add site` opens a dialog (name, domain)
 and on creation shows the `<script>` snippet to paste into the tracked site, copy-to-clipboard with
 an `aria-live` confirmation — the same shape as the host enrollment dialog. The dialog's copy also
 notes that a site with its own Content-Security-Policy needs to allow this server's origin in

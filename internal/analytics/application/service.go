@@ -70,20 +70,22 @@ func (s *Service) DeleteSite(ctx context.Context, id string) error {
 	return s.repo.DeleteSite(ctx, id)
 }
 
-// rangeWindow maps a stats range name to how far back it looks.
-var rangeWindow = map[string]time.Duration{
-	"today": 24 * time.Hour,
-	"7d":    7 * 24 * time.Hour,
-	"30d":   30 * 24 * time.Hour,
+// rangeDays maps a stats range name to how many UTC calendar days it covers, today included.
+var rangeDays = map[string]int{
+	"today": 1,
+	"7d":    7,
+	"30d":   30,
 }
 
 // Stats returns a site's pageview summary over range ("today"|"7d"|"30d"), defaulting to "today".
+// Ranges are UTC calendar days, not rolling windows (docs/SPEC.md §4i): "today" starts at 00:00 UTC.
 func (s *Service) Stats(ctx context.Context, siteID, rng string) (domain.Stats, error) {
-	window, ok := rangeWindow[rng]
+	days, ok := rangeDays[rng]
 	if !ok {
-		window = rangeWindow["today"]
+		days = rangeDays["today"]
 	}
-	return s.repo.Stats(ctx, siteID, s.now().Add(-window))
+	today := s.now().UTC().Truncate(24 * time.Hour)
+	return s.repo.Stats(ctx, siteID, today.AddDate(0, 0, -(days-1)))
 }
 
 // Collect validates a beacon, derives everything server-side, and stores the pageview. It never
@@ -104,7 +106,7 @@ func (s *Service) Collect(ctx context.Context, b domain.Beacon, clientIP, userAg
 	if err != nil {
 		return false, err
 	}
-	if !found || !originMatchesSite(originHost, site.Domain) {
+	if !found || !OriginMatchesSite(originHost, site.Domain) {
 		return false, nil
 	}
 	hash, err := s.visitorHash(ctx, site.ID, clientIP, userAgent)
@@ -115,8 +117,8 @@ func (s *Service) Collect(ctx context.Context, b domain.Beacon, clientIP, userAg
 	err = s.repo.InsertPageview(ctx, domain.Pageview{
 		SiteID:         site.ID,
 		TS:             s.now(),
-		Path:           b.URL,
-		ReferrerDomain: referrerDomain(b.Referrer),
+		Path:           pathOnly(b.URL),
+		ReferrerDomain: externalReferrer(b.Referrer, site.Domain),
 		VisitorHash:    hash,
 		Browser:        browser,
 		OS:             os,
@@ -125,7 +127,9 @@ func (s *Service) Collect(ctx context.Context, b domain.Beacon, clientIP, userAg
 	return err == nil, err
 }
 
-func originMatchesSite(originHost, siteDomain string) bool {
+// OriginMatchesSite reports whether an Origin hostname is the site's domain or www. plus it,
+// case-insensitively (docs/SPEC.md §4i).
+func OriginMatchesSite(originHost, siteDomain string) bool {
 	host := strings.ToLower(originHost)
 	d := strings.ToLower(siteDomain)
 	return host != "" && (host == d || host == "www."+d)
@@ -198,6 +202,29 @@ func (s *Service) runOnce(ctx context.Context, name string, job func(context.Con
 	if err := job(ctx); err != nil && ctx.Err() == nil {
 		slog.Error("analytics maintenance job failed", "job", name, "err", err)
 	}
+}
+
+// pathOnly keeps a beacon URL's pathname: the query string and fragment can carry tokens or
+// e-mail addresses and split one page into many (docs/SPEC.md §4i). An older snippet still sends
+// them, so they are dropped here, not only in track.js.
+func pathOnly(u string) string {
+	if i := strings.IndexAny(u, "?#"); i >= 0 {
+		u = u[:i]
+	}
+	if u == "" {
+		return "/"
+	}
+	return u
+}
+
+// externalReferrer is the referrer's hostname, or "" when there is none or it is the site itself:
+// navigation inside the site is not a referral (docs/SPEC.md §4i).
+func externalReferrer(referrer, siteDomain string) string {
+	host := referrerDomain(referrer)
+	if OriginMatchesSite(host, siteDomain) {
+		return ""
+	}
+	return host
 }
 
 func referrerDomain(referrer string) string {

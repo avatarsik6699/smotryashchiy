@@ -37,14 +37,18 @@ func newServer(t *testing.T, opts Options) (http.Handler, *application.Service) 
 	srv.Mux.HandleFunc("GET /api/private", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	// Stand-in for the embedded SPA catch-all: it answers every path nothing else claims.
 	srv.Mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusTeapot) })
+	srv.Mux.HandleFunc("POST /api/private", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusCreated) })
+	srv.Mux.HandleFunc("POST /api/collect", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
 	var h http.Handler = srv.Mux
 	h = RequireSession(svc)(h)
+	h = GuardCrossOriginWrites()(h) // same order as cmd/smotryashchiy/server.go
 	return h, svc
 }
 
 func post(h http.Handler, path, body, remote string, headers ...string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
 	req.RemoteAddr = remote
+	req.Header.Set("Content-Type", "application/json") // what the SPA sends; headers may override it
 	for i := 0; i+1 < len(headers); i += 2 {
 		req.Header.Set(headers[i], headers[i+1])
 	}

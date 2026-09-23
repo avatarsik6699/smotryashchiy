@@ -24,6 +24,9 @@ func TestRedirectToHTTPSStripsThePortAndKeepsThePath(t *testing.T) {
 		if rec.Code != http.StatusMovedPermanently || rec.Header().Get("Location") != want {
 			t.Errorf("host %q: code=%d location=%q, want 301 to %q", host, rec.Code, rec.Header().Get("Location"), want)
 		}
+		if got := rec.Header().Get("Strict-Transport-Security"); got != "" {
+			t.Errorf("host %q: plain-HTTP redirect sent HSTS %q; only the TLS listener may", host, got)
+		}
 	}
 }
 

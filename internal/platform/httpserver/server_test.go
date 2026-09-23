@@ -97,6 +97,9 @@ func TestServeHTTPSServesTheAppOverTLS(t *testing.T) {
 	if err != nil || resp.StatusCode != 200 {
 		t.Fatalf("TLS listener: %v %v", resp, err)
 	}
+	if got := resp.Header.Get("Strict-Transport-Security"); got != "max-age=31536000" {
+		t.Fatalf("HSTS = %q, want max-age=31536000 on the TLS listener", got)
+	}
 	resp.Body.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)

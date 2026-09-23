@@ -9,7 +9,7 @@
 | Change | `17` |
 | Slug | `sqlite-temp-in-memory` |
 | Title | Keep SQLite temporary storage in memory |
-| Status | `active` |
+| Status | `archived` |
 | Branch | `feature/17-sqlite-temp-in-memory` |
 
 ---

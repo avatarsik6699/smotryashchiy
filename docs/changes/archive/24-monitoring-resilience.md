@@ -7,14 +7,14 @@
 | Change | `24` |
 | Slug | `monitoring-resilience` |
 | Title | Устойчивость панели мониторинга и TLS |
-| Status | `active` |
+| Status | `archived` |
 | Branch | `feature/24-monitoring-resilience` |
 
 ---
 
 ## Goal
 
-Устранить воспроизводимую перегрузку `sre.infraege.ru` при открытии панели на накопленной телеметрии и повторяющуюся ошибку блокировки ACME. 2026-09-29 после открытия панели read API отвечал за десятки секунд, вернул HTTP 500, `/health/ready` кратковременно вернул 503, а память контейнера выросла примерно с 22% до 70% лимита при базе 1,6 ГБ. Сохранить контракт [SPEC](../SPEC.md) §4.3–§4.5, §4g и §5: все серии доступны через `latest=true`, агент продолжает ingest, сертификаты живут под `/data`, образ остаётся непривилегированным и read-only.
+Устранить воспроизводимую перегрузку `sre.infraege.ru` при открытии панели на накопленной телеметрии и повторяющуюся ошибку блокировки ACME. 2026-09-29 после открытия панели read API отвечал за десятки секунд, вернул HTTP 500, `/health/ready` кратковременно вернул 503, а память контейнера выросла примерно с 22% до 70% лимита при базе 1,6 ГБ. Сохранить контракт [SPEC](../../SPEC.md) §4.3–§4.5, §4g и §5: все серии доступны через `latest=true`, агент продолжает ingest, сертификаты живут под `/data`, образ остаётся непривилегированным и read-only.
 
 ---
 
@@ -84,7 +84,7 @@ See `docs/SPEC.md` §4.2–§4.5, §4g, §5 and the Files list above. Update SPE
 
 ## Gate Checks
 
-> Fast Gate, Full Gate and Release Gate are defined in [docs/STACK.md](../STACK.md); this section records change-specific evidence.
+> Fast Gate, Full Gate and Release Gate are defined in [docs/STACK.md](../../STACK.md); this section records change-specific evidence.
 
 - D1/T1 use disposable synthetic data sized to expose the production failure; no production backup is imported. Record baseline and candidate SQL plan, request latency, readiness, ingest continuity and peak container memory; clean generated data after analysis.
 - The ACME regression uses a local test CA, read-only image and writable `/data`. The public certificate is only observed after an independently authorised release.

@@ -108,10 +108,11 @@ func runServer(stdout, stderr io.Writer) error {
 
 	serveErr := make(chan error, 1)
 	if cfg.TLSDomain != "" {
-		tlsConfig, err := setupACME(ctx, cfg, sqlDB)
+		tlsConfig, stopACME, err := setupACME(ctx, cfg, sqlDB)
 		if err != nil {
 			return err
 		}
+		defer stopACME()
 		go func() { serveErr <- srv.ServeHTTPS(cfg.HTTPSAddr, tlsConfig) }()
 		slog.Info("server started", "https_addr", cfg.HTTPSAddr, "acme_http_addr", cfg.ACMEHTTPAddr, "domain", cfg.TLSDomain, "release", cfg.Release)
 	} else {

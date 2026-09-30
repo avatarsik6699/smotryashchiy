@@ -73,6 +73,41 @@ describe('DashboardStore.load', () => {
     expect(fetchMock.mock.calls.filter((c) => String(c[0]) === '/api/hosts')).toHaveLength(1)
   })
 
+  it('bounds simultaneous history reads while loading every history series', async () => {
+    const pending: Array<() => void> = []
+    let active = 0
+    let peak = 0
+    fetchMock.mockImplementation(async (input) => {
+      const url = String(input)
+      if (url.includes('step=60')) {
+        active++
+        peak = Math.max(peak, active)
+        return new Promise<Response>((resolve) => {
+          pending.push(() => {
+            active--
+            resolve(ok({ metrics: [] }))
+          })
+        })
+      }
+      if (url.startsWith('/api/hosts')) return ok({ hosts: [] })
+      if (url.startsWith('/api/metrics')) return ok({ metrics: [] })
+      if (url.startsWith('/api/events')) return ok({ events: [] })
+      if (url.startsWith('/api/checks')) return ok({ checks: [] })
+      if (url.startsWith('/api/uptime')) return ok({ targets: [] })
+      throw new Error(`unexpected ${url}`)
+    })
+    const store = new DashboardStore(() => NOW)
+    const loading = store.load()
+    for (const expected of [2, 2, 1]) {
+      await vi.waitFor(() => expect(pending).toHaveLength(expected))
+      pending.splice(0).forEach((finish) => finish())
+    }
+    await loading
+    expect(peak).toBe(2)
+    expect(fetchMock.mock.calls.filter((call) => String(call[0]).includes('step=60'))).toHaveLength(5)
+    expect(store.getSnapshot().status).toBe('ready')
+  })
+
   it('is an error state when the first load fails, and keeps data with an error when a refresh fails', async () => {
     routeAll({ '/api/hosts': () => new Response('{"error":"boom"}', { status: 500 }) })
     const store = new DashboardStore(() => NOW)

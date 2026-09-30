@@ -189,6 +189,12 @@ func (s *Store) Metrics(ctx context.Context, q application.MetricQuery) ([]domai
 	}
 	var query string
 	if q.Step > 0 {
+		stepSource := "metrics"
+		// Without a host filter, SQLite otherwise scans every raw series through
+		// metrics_series_ts, even when the caller requests only the last hour.
+		if q.HostID == "" && (q.From != nil || q.To != nil) {
+			stepSource += " INDEXED BY metrics_ts"
+		}
 		if q.From != nil {
 			f.add("ts >= ?", q.From.UnixMilli())
 		}
@@ -198,17 +204,14 @@ func (s *Store) Metrics(ctx context.Context, q application.MetricQuery) ([]domai
 		// Newest sample per Step-second bucket per series; ts is part of the primary key, so the
 		// join back on (series, ts) selects exactly one row per bucket.
 		query = `SELECT m.host_id, m.name, m.labels_json, m.ts, m.value FROM metrics m
-			JOIN (SELECT host_id, name, labels_json, MAX(ts) AS ts FROM metrics` + f.where() + `
+			JOIN (SELECT host_id, name, labels_json, MAX(ts) AS ts FROM ` + stepSource + f.where() + `
 			      GROUP BY host_id, name, labels_json, ts / ?) l
 			  ON m.host_id = l.host_id AND m.name = l.name AND m.labels_json = l.labels_json AND m.ts = l.ts
 			ORDER BY m.ts, m.host_id, m.name, m.labels_json LIMIT ?`
 		f.args = append(f.args, int64(q.Step)*1000)
 	} else if q.Latest {
-		query = `SELECT m.host_id, m.name, m.labels_json, m.ts, m.value FROM metrics m
-			JOIN (SELECT host_id, name, labels_json, MAX(ts) AS ts FROM metrics` + f.where() + `
-			      GROUP BY host_id, name, labels_json) l
-			  ON m.host_id = l.host_id AND m.name = l.name AND m.labels_json = l.labels_json AND m.ts = l.ts
-			ORDER BY m.host_id, m.name, m.labels_json LIMIT ?`
+		query = `SELECT host_id, name, labels_json, ts, value FROM metric_latest` + f.where() +
+			` ORDER BY host_id, name, labels_json LIMIT ?`
 	} else {
 		if q.From != nil {
 			f.add("ts >= ?", q.From.UnixMilli())

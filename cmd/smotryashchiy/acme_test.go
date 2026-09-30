@@ -43,7 +43,7 @@ func TestACMECAPicksTheRightEndpoint(t *testing.T) {
 func TestSetupACMERejectsAnUnusableACMEHTTPAddrBeforeAnyNetworkCall(t *testing.T) {
 	for _, addr := range []string{"no-port", "", ":not-a-number"} {
 		cfg := config.Config{TLSDomain: "monitor.example.com", ACMEHTTPAddr: addr, DBPath: t.TempDir() + "/s.db"}
-		_, err := setupACME(context.Background(), cfg, nil)
+		_, _, err := setupACME(context.Background(), cfg, nil)
 		if err == nil || !strings.Contains(err.Error(), "ACMEHTTPAddr") && !strings.Contains(err.Error(), "port") {
 			t.Errorf("ACMEHTTPAddr=%q: err = %v, want a local validation error naming the address", addr, err)
 		}

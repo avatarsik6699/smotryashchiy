@@ -73,22 +73,20 @@ export class DashboardStore {
   private async doLoad(): Promise<void> {
     const from = new Date(this.now() - WINDOW_MS).toISOString()
     try {
-      const [hosts, latest, events, errorLists, checks, uptime, ...history] = await Promise.all([
+      const [hosts, latest, events, errorLists, checks, uptime, history] = await Promise.all([
         api<{ hosts: HostDTO[] }>('/api/hosts'),
         api<{ metrics: MetricDTO[] }>(`/api/metrics?latest=true&limit=${METRIC_LIMIT}`),
         api<{ events: EventDTO[] }>(`/api/events?limit=${MAX_EVENTS}`),
         Promise.all(ERROR_LEVELS.map((level) => api<{ events: EventDTO[] }>(`/api/events?level=${level}&limit=${MAX_ERROR_EVENTS}`))),
         api<{ checks: CheckDTO[] }>('/api/checks'),
         api<{ targets: UptimeTargetDTO[] }>('/api/uptime'),
-        ...HISTORY_METRICS.map((name) =>
-          api<{ metrics: MetricDTO[] }>(`/api/metrics?name=${encodeURIComponent(name)}&from=${encodeURIComponent(from)}&step=${HISTORY_STEP_SECONDS}&limit=${METRIC_LIMIT}`),
-        ),
+        this.loadHistory(from),
       ])
       this.set({
         ...this.state,
         status: 'ready',
         error: null,
-        hosts: buildRecords({ hosts: hosts.hosts, latest: latest.metrics, history: history.flatMap((h) => h.metrics), events: events.events, checks: checks.checks }),
+        hosts: buildRecords({ hosts: hosts.hosts, latest: latest.metrics, history, events: events.events, checks: checks.checks }),
         targets: buildTargets(uptime.targets),
         events: events.events,
         errors: errorLists
@@ -101,6 +99,19 @@ export class DashboardStore {
       const message = e instanceof Error ? e.message : 'load failed'
       this.set({ ...this.state, status: this.state.status === 'ready' ? 'ready' : 'error', error: message })
     }
+  }
+
+  private async loadHistory(from: string): Promise<MetricDTO[]> {
+    const points: MetricDTO[] = []
+    // Each history query reads the last hour; SQLite serves one connection at a time.
+    // Limit queued reads from one dashboard while retaining every catalog series.
+    for (let i = 0; i < HISTORY_METRICS.length; i += 2) {
+      const batch = await Promise.all(HISTORY_METRICS.slice(i, i + 2).map((name) =>
+        api<{ metrics: MetricDTO[] }>(`/api/metrics?name=${encodeURIComponent(name)}&from=${encodeURIComponent(from)}&step=${HISTORY_STEP_SECONDS}&limit=${METRIC_LIMIT}`),
+      ))
+      points.push(...batch.flatMap((result) => result.metrics))
+    }
+    return points
   }
 
   setConnection(connection: ConnectionState): void {

@@ -129,6 +129,14 @@ message, canonical labels). A batch is applied in one transaction. Re-sending an
 are stored once and reported as `duplicates`, so later alert evaluation can skip them. A stored
 batch advances `hosts.last_seen_at` to the receipt time; producer `ts` never does.
 
+The physical `metric_latest` table stores the newest raw point for each
+`(host, name, canonical labels)` series to keep `latest=true` reads bounded by series count rather
+than raw-row count. Migration fills it from existing raw metrics in the same transaction that
+installs its insert/delete triggers. A newer accepted point replaces the cached point; older or
+duplicate points do not. Deleting the cached point during retention selects the next newest raw
+point, or removes the cache row when none remains. Host deletion removes its cache rows. The table
+never extends the raw TTL, changes rollups, or changes the public response contract.
+
 ### 4.3 Read API (session required, read-only)
 
 | Verb | Path | Behavior |

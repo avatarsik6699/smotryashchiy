@@ -73,6 +73,15 @@ point here yet (`dig`); port 80 is not actually reachable from the internet (tes
 ISP blocking inbound 80 will show up here); or `SMOTRYASHCHIY_TLS_DOMAIN` has a typo. Fix the cause and
 `docker compose restart server`; there is no manual "retry" command, a restart re-attempts at start-up.
 
+**Certificate exists, but ARI/renewal lock maintenance repeats an error.**
+Check `docker compose logs --since 24h server` for `certmagic/locks` errors and the path in each
+message. Both certificate assets and maintenance locks must be under the writable `/data/acme`
+volume; `/home/nonroot/.local/share/certmagic/locks` means the running image still uses the old
+default maintenance cache. Verify the image release and `/data` mount, then deploy a reviewed fix
+through the normal release procedure. Do not make the root filesystem writable or copy certificate
+material into the home directory. After release, verify `/health/ready`, HTTPS certificate dates
+and absence of new lock errors over a maintenance interval; record the result without private keys.
+
 **An agent enrolled but never shows data.**
 The agent needs outbound UDP to `SMOTRYASHCHIY_PUBLIC_ENDPOINT`; a firewall between the agent and this
 host that blocks UDP (not just TCP) is the usual cause. Confirm the server's WireGuard port is open:

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/caddyserver/certmagic"
@@ -21,27 +22,37 @@ import (
 
 // setupACME starts the ACME HTTP-01 listener (health checks plus a redirect of everything else to
 // https://) and obtains (or loads) a certificate for cfg.TLSDomain, returning the TLS config for the
-// app listener. The HTTP-01 listener must already be accepting connections before the certificate is
+// app listener and its cleanup function. The HTTP-01 listener must already be accepting connections before the certificate is
 // requested — an ACME server validates the challenge by connecting to it — so this binds the
 // listener synchronously and only then calls ManageSync; it keeps running afterward for renewals and
 // keeps serving redirects and health checks (docs/SPEC.md §4g). Certificates are stored under
 // <DB dir>/acme, which is writable next to the database even on a read-only root filesystem.
-func setupACME(ctx context.Context, cfg config.Config, sqlDB *sql.DB) (*tls.Config, error) {
+func setupACME(ctx context.Context, cfg config.Config, sqlDB *sql.DB) (*tls.Config, func(), error) {
 	acmeMux := http.NewServeMux()
 	httpserver.RegisterHealth(acmeMux, cfg.Release, sqlDB.PingContext)
 	acmeMux.Handle("/", redirectToHTTPS())
 
 	_, portStr, err := net.SplitHostPort(cfg.ACMEHTTPAddr)
 	if err != nil {
-		return nil, fmt.Errorf("acme: invalid %s %q: %w", "ACMEHTTPAddr", cfg.ACMEHTTPAddr, err)
+		return nil, nil, fmt.Errorf("acme: invalid %s %q: %w", "ACMEHTTPAddr", cfg.ACMEHTTPAddr, err)
 	}
 	altHTTPPort, err := strconv.Atoi(portStr)
 	if err != nil {
-		return nil, fmt.Errorf("acme: invalid port in %q: %w", cfg.ACMEHTTPAddr, err)
+		return nil, nil, fmt.Errorf("acme: invalid port in %q: %w", cfg.ACMEHTTPAddr, err)
 	}
 
-	acmeCfg := certmagic.NewDefault()
-	acmeCfg.Storage = &certmagic.FileStorage{Path: filepath.Join(filepath.Dir(cfg.DBPath), "acme")}
+	// NewDefault's maintenance cache recreates its config from certmagic.Default, so changing
+	// Storage on the returned config only affects initial issuance. Give maintenance the same
+	// config (and /data storage) used by ManageSync and the TLS listener.
+	var acmeCfg *certmagic.Config
+	cache := certmagic.NewCache(certmagic.CacheOptions{
+		GetConfigForCert: func(certmagic.Certificate) (*certmagic.Config, error) {
+			return acmeCfg, nil
+		},
+	})
+	acmeCfg = certmagic.New(cache, certmagic.Config{
+		Storage: &certmagic.FileStorage{Path: filepath.Join(filepath.Dir(cfg.DBPath), "acme")},
+	})
 	issuerCfg := certmagic.ACMEIssuer{
 		CA:                      acmeCA(cfg.ACMEStaging),
 		Email:                   cfg.ACMEEmail,
@@ -59,7 +70,8 @@ func setupACME(ctx context.Context, cfg config.Config, sqlDB *sql.DB) (*tls.Conf
 
 	ln, err := net.Listen("tcp", cfg.ACMEHTTPAddr)
 	if err != nil {
-		return nil, fmt.Errorf("acme: listen on %s: %w", cfg.ACMEHTTPAddr, err)
+		cache.Stop()
+		return nil, nil, fmt.Errorf("acme: listen on %s: %w", cfg.ACMEHTTPAddr, err)
 	}
 	acmeSrv := &http.Server{Handler: issuer.HTTPChallengeHandler(acmeMux), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
@@ -67,18 +79,20 @@ func setupACME(ctx context.Context, cfg config.Config, sqlDB *sql.DB) (*tls.Conf
 			slog.Error("acme http listener stopped", "err", err)
 		}
 	}()
-	go func() {
-		<-ctx.Done()
+	shutdown := sync.OnceFunc(func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 		defer cancel()
 		_ = acmeSrv.Shutdown(shutdownCtx)
-	}()
+		cache.Stop()
+	})
+	stopWatch := context.AfterFunc(ctx, shutdown)
 
 	if err := acmeCfg.ManageSync(ctx, []string{cfg.TLSDomain}); err != nil {
-		_ = acmeSrv.Close()
-		return nil, fmt.Errorf("acme: obtain a certificate for %s: %w", cfg.TLSDomain, err)
+		stopWatch()
+		shutdown()
+		return nil, nil, fmt.Errorf("acme: obtain a certificate for %s: %w", cfg.TLSDomain, err)
 	}
-	return acmeCfg.TLSConfig(), nil
+	return acmeCfg.TLSConfig(), shutdown, nil
 }
 
 func acmeCA(staging bool) string {

@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -27,6 +28,10 @@ func checker(pool *x509.CertPool) *Checker {
 
 func target(kind domain.Kind, addr string) domain.Target {
 	return domain.Target{ID: "t1", Name: "t", Kind: kind, Address: addr, IntervalSeconds: 60}
+}
+
+func refusedDial(_ context.Context, network, _ string) (net.Conn, error) {
+	return nil, &net.OpError{Op: "dial", Net: network, Err: syscall.ECONNREFUSED}
 }
 
 func TestHTTPOKRecordsStatusAndLatency(t *testing.T) {
@@ -83,10 +88,9 @@ func TestHTTPTimeoutIsReportedAsTimeoutWithoutLatency(t *testing.T) {
 }
 
 func TestHTTPRefusedConnectionHasNoLatencyNotZero(t *testing.T) {
-	ln, _ := net.Listen("tcp", "127.0.0.1:0")
-	addr := ln.Addr().String()
-	ln.Close()
-	res := checker(nil).Check(context.Background(), target(domain.KindHTTP, "http://"+addr))
+	c := checker(nil)
+	c.Dial = refusedDial
+	res := c.Check(context.Background(), target(domain.KindHTTP, "http://127.0.0.1:1"))
 	if res.OK || res.LatencyMS != nil || res.StatusCode != nil || !strings.Contains(res.Error, "refused") {
 		t.Fatalf("%+v", res)
 	}
@@ -111,7 +115,7 @@ func TestHTTPSVerifiesTheCertificateAndReportsExpiry(t *testing.T) {
 	}
 }
 
-func TestTCPOpenAndClosed(t *testing.T) {
+func TestTCPOpenAndRefused(t *testing.T) {
 	ln, _ := net.Listen("tcp", "127.0.0.1:0")
 	go func() {
 		for {
@@ -128,7 +132,10 @@ func TestTCPOpenAndClosed(t *testing.T) {
 	}
 	addr := ln.Addr().String()
 	ln.Close()
-	down := checker(nil).Check(context.Background(), target(domain.KindTCP, addr))
+	// A freed ephemeral port can be claimed by another test process immediately.
+	c := checker(nil)
+	c.Dial = refusedDial
+	down := c.Check(context.Background(), target(domain.KindTCP, addr))
 	if down.OK || down.LatencyMS != nil || down.Error == "" {
 		t.Fatalf("%+v", down)
 	}

@@ -188,6 +188,18 @@ Carry these into the first contract tests instead of rediscovering them in produ
 - A UDP port mapped for the tunnel (`-p 51820:51820/udp`) must be free on the host; an agent enrolled against a
   dev-mode server dials `127.0.0.1:<udp port>`, so test agents only work when host and container ports match.
 
+### certmagic maintenance can use its default home storage after initial issuance
+
+- **Symptoms**: ARI/renewal maintenance repeatedly fails to create a lock under
+  `/home/nonroot/.local/share/certmagic/locks/` in a read-only container, although the certificate
+  was issued into `/data/acme` and HTTPS remains available.
+- **Root cause**: `certmagic.NewDefault()` creates a cache whose maintenance callback constructs
+  another default config. Assigning `Storage` on the first config afterward changes initial
+  issuance but not the callback's storage path.
+- **Fix**: construct a dedicated `certmagic.Cache` with `GetConfigForCert` returning the configured
+  `/data/acme` config, and stop that cache on shutdown. Verify maintenance/renewal against a local
+  CA under a nonroot read-only rootfs; inspect the journal for the old lock path afterward.
+
 ### certmagic's embedded HTTP-01 solver tries to bind port 80 itself, even with your own listener already up
 
 - **Symptoms**: `could not start listener for challenge server at :80: listen tcp :80: bind: permission

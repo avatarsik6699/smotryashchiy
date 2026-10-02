@@ -377,10 +377,13 @@ Carry these into the first contract tests instead of rediscovering them in produ
 - **Fix**: the UI decides what is current — per container and metric the newest series wins, and a
   container with no fresh sample is not shown (docs/SPEC.md §5). Never assume `latest` ages out.
 
-### A Docker log stream is the only level the agent sees
+### Docker stderr is not a reliable severity level
 
 - **Symptoms**: every dashboard request appeared as a `warn` event from the server container.
-- **Root cause**: Docker log lines carry no priority; the agent maps stdout to `info` and stderr to
-  `warn`, and Go's `log` package writes to stderr by default.
+- **Root cause**: Docker streams carry no priority; older agents mapped stdout to `info` and stderr
+  to `warn`. Go's `log` package, PostgreSQL and ACME dependencies can write routine output to stderr.
 - **Fix**: the server's default `slog` logger sends Info to stdout and Warn/Error to stderr
-  (`internal/platform/logging`). Any container you want to read well in EVENTS must do the same.
+  (`internal/platform/logging`). Change 25 additionally reads explicit severity from recognized
+  log envelopes; unknown formats retain the stream fallback. Upgrade the agent on the source host
+  to apply that classification. Historical stored events are unchanged, and real `ERROR`/`FATAL`
+  records are now errors rather than warnings. Keep structured levels in new container log formats.

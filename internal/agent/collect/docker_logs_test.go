@@ -105,6 +105,49 @@ func TestDockerLogsCollectTailsARunningContainer(t *testing.T) {
 	}
 }
 
+func TestDockerLogsCollectUsesRecognizedSeverityAcrossStreams(t *testing.T) {
+	container := dockerContainer{ID: "abc123", Names: []string{"/api"}, Image: "api:latest"}
+	var frames bytes.Buffer
+	frames.Write(dockerLogFrame(false, `{"level":"error","msg":"database unavailable"}`+"\n"))
+	frames.Write(dockerLogFrame(true, "2026-10-01T17:07:15.123Z\tinfo\tmaintenance\tcertificate renewed\n"))
+	frames.Write(dockerLogFrame(false, "2026-10-01 17:07:15.123 UTC [42] LOG: checkpoint complete\n"))
+	frames.Write(dockerLogFrame(true, `time=2026-10-01T17:07:15.123Z level=WARN msg="queue is backing up"`+"\n"))
+	frames.Write(dockerLogFrame(false, `request message="level=critical"`+"\n"))
+	d := NewDockerLogs(t.Context(), fakeDockerdWithLogs(t, container, frames.Bytes()))
+
+	var events []Event
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		got, err := d.Collect()
+		if err != nil {
+			t.Fatalf("Collect: %v", err)
+		}
+		events = append(events, got...)
+		if len(events) == 5 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	want := []struct {
+		level   string
+		message string
+	}{
+		{"error", `{"level":"error","msg":"database unavailable"}`},
+		{"info", "2026-10-01T17:07:15.123Z\tinfo\tmaintenance\tcertificate renewed"},
+		{"info", "2026-10-01 17:07:15.123 UTC [42] LOG: checkpoint complete"},
+		{"warn", `time=2026-10-01T17:07:15.123Z level=WARN msg="queue is backing up"`},
+		{"info", `request message="level=critical"`},
+	}
+	if len(events) != len(want) {
+		t.Fatalf("got %d events, want %d: %+v", len(events), len(want), events)
+	}
+	for i, expected := range want {
+		if events[i].Level != expected.level || events[i].Message != expected.message {
+			t.Errorf("event[%d] = (%q, %q), want (%q, %q)", i, events[i].Level, events[i].Message, expected.level, expected.message)
+		}
+	}
+}
+
 func TestDockerLogsCollectDropsRoutineHealthCheckLines(t *testing.T) {
 	container := dockerContainer{ID: "abc123", Names: []string{"/web"}, Image: "nginx:latest"}
 	var frames bytes.Buffer

@@ -83,6 +83,7 @@ type CPU struct {
 	Proc      Proc
 	prevTotal uint64
 	prevIdle  uint64
+	prev      []uint64
 	primed    bool
 }
 
@@ -93,17 +94,32 @@ func (c *CPU) Collect() ([]Sample, error) {
 	if err != nil {
 		return nil, err
 	}
-	total, idle, err := parseCPULine(raw)
+	counters, err := parseCPULine(raw)
 	if err != nil {
 		return nil, err
 	}
-	prevTotal, prevIdle, primed := c.prevTotal, c.prevIdle, c.primed
-	c.prevTotal, c.prevIdle, c.primed = total, idle, true
-	if !primed || total <= prevTotal || idle < prevIdle {
+	prevTotal, prevIdle, prev, primed := c.prevTotal, c.prevIdle, c.prev, c.primed
+	c.prevTotal, c.prevIdle, c.prev, c.primed = counters.total, counters.idle, counters.values, true
+	if !primed || len(counters.values) != len(prev) || counters.total <= prevTotal {
 		return nil, nil // no interval yet, or a counter reset: nothing measured
 	}
-	dTotal, dIdle := float64(total-prevTotal), float64(idle-prevIdle)
-	return []Sample{{Name: "cpu.usage_percent", Value: clampPercent(100 * (1 - dIdle/dTotal))}}, nil
+	for i, current := range counters.values {
+		if current < prev[i] {
+			return nil, nil // any counter reset invalidates the interval
+		}
+	}
+	dTotal := float64(counters.total - prevTotal)
+	dIdle := float64(counters.idle - prevIdle)
+	out := []Sample{{Name: "cpu.usage_percent", Value: clampPercent(100 * (1 - dIdle/dTotal))}}
+	if counters.hasIOWait {
+		dIOWait := float64(counters.values[4] - prev[4])
+		out = append(out, Sample{Name: "cpu.iowait_percent", Value: clampPercent(100 * dIOWait / dTotal)})
+	}
+	if counters.hasSteal {
+		dSteal := float64(counters.values[7] - prev[7])
+		out = append(out, Sample{Name: "cpu.steal_percent", Value: clampPercent(100 * dSteal / dTotal)})
+	}
+	return out, nil
 }
 
 // CPUCount reports how many CPUs the host has (the `cpuN` lines of /proc/stat). Load average only
@@ -129,30 +145,41 @@ func (c CPUCount) Collect() ([]Sample, error) {
 	return []Sample{{Name: "cpu.count", Value: float64(n)}}, nil
 }
 
-// parseCPULine returns the summed jiffies and the idle share (idle + iowait) of the aggregate cpu line.
-func parseCPULine(stat string) (total, idle uint64, err error) {
+type cpuCounters struct {
+	values    []uint64
+	total     uint64
+	idle      uint64
+	hasIOWait bool
+	hasSteal  bool
+}
+
+// parseCPULine returns aggregate CPU counters. The first eight columns contribute to total;
+// guest columns are already included in user/nice. Idle time includes iowait.
+func parseCPULine(stat string) (cpuCounters, error) {
 	for _, line := range strings.Split(stat, "\n") {
 		fields := strings.Fields(line)
 		if len(fields) < 5 || fields[0] != "cpu" {
 			continue
 		}
-		var vals []uint64
-		// user nice system idle iowait irq softirq steal; guest columns are already inside user/nice.
-		for i := 1; i < len(fields) && i <= 8; i++ {
+		vals := make([]uint64, 0, len(fields)-1)
+		for i := 1; i < len(fields); i++ {
 			v, perr := strconv.ParseUint(fields[i], 10, 64)
 			if perr != nil {
-				return 0, 0, fmt.Errorf("collect: parse /proc/stat: %w", perr)
+				return cpuCounters{}, fmt.Errorf("collect: parse /proc/stat: %w", perr)
 			}
 			vals = append(vals, v)
+		}
+		var total uint64
+		for _, v := range vals[:min(len(vals), 8)] {
 			total += v
 		}
-		idle = vals[3]
+		idle := vals[3]
 		if len(vals) > 4 {
 			idle += vals[4]
 		}
-		return total, idle, nil
+		return cpuCounters{values: vals, total: total, idle: idle, hasIOWait: len(vals) > 4, hasSteal: len(vals) > 7}, nil
 	}
-	return 0, 0, errors.New("collect: no aggregate cpu line in /proc/stat")
+	return cpuCounters{}, errors.New("collect: no aggregate cpu line in /proc/stat")
 }
 
 // Memory reports RAM and swap from /proc/meminfo; used = total - MemAvailable.

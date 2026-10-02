@@ -135,10 +135,7 @@ func (d *DockerLogs) tail(ctx context.Context, id, name string) {
 		if isRoutineHealthCheck(line) {
 			return // docs/SPEC.md §4h: routine 2xx health-check polling is not forwarded
 		}
-		level := "info"
-		if stderr {
-			level = "warn"
-		}
+		level := dockerLogLevel(line, stderr)
 		d.mu.Lock()
 		d.buf = append(d.buf, Event{Level: level, Message: truncateMessage(line), Labels: map[string]string{"container": name}})
 		d.mu.Unlock()

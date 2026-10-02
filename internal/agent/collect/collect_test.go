@@ -43,8 +43,63 @@ func TestCPUFirstTickMeasuresNothingThenReportsDelta(t *testing.T) {
 		t.Fatal(err)
 	}
 	s, err := c.Collect()
-	if err != nil || len(s) != 1 || !near(s[0].Value, 50) || s[0].Name != "cpu.usage_percent" {
-		t.Fatalf("second tick = %v, %v; want 50", s, err)
+	m := byName(s)
+	if err != nil || len(m) != 3 || !near(m["cpu.usage_percent"], 50) || m["cpu.iowait_percent"] != 0 || m["cpu.steal_percent"] != 0 {
+		t.Fatalf("second tick = %v, %v; want usage 50 and measured zero iowait/steal", m, err)
+	}
+}
+
+func TestCPUReportsIowaitAndStealDeltas(t *testing.T) {
+	proc := procTree(t, map[string]string{"stat": "cpu 100 0 100 1000 100 0 0 10\n"})
+	c := &CPU{Proc: proc}
+	if _, err := c.Collect(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(proc.Root, "stat"), []byte("cpu 200 0 200 1100 150 0 0 30\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, err := c.Collect()
+	m := byName(s)
+	if err != nil || len(m) != 3 || !near(m["cpu.usage_percent"], 100*(1-150.0/370)) || !near(m["cpu.iowait_percent"], 100*50.0/370) || !near(m["cpu.steal_percent"], 100*20.0/370) {
+		t.Fatalf("cpu deltas = %v, %v; want usage, iowait, and steal percentages", m, err)
+	}
+}
+
+func TestCPULegacyFieldsAndFieldCountChange(t *testing.T) {
+	proc := procTree(t, map[string]string{"stat": "cpu 100 0 100 700\n"})
+	c := &CPU{Proc: proc}
+	_, _ = c.Collect()
+	if err := os.WriteFile(filepath.Join(proc.Root, "stat"), []byte("cpu 200 0 200 900\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, err := c.Collect()
+	if err != nil || len(s) != 1 || s[0].Name != "cpu.usage_percent" {
+		t.Fatalf("legacy fields = %v, %v; want usage only", s, err)
+	}
+	if err := os.WriteFile(filepath.Join(proc.Root, "stat"), []byte("cpu 300 0 300 1000 100\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if s, err := c.Collect(); err != nil || len(s) != 0 {
+		t.Fatalf("field-count change = %v, %v; want no interval", s, err)
+	}
+	if err := os.WriteFile(filepath.Join(proc.Root, "stat"), []byte("cpu 400 0 400 1100 100\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, err = c.Collect()
+	if err != nil || len(s) != 2 || byName(s)["cpu.iowait_percent"] != 0 {
+		t.Fatalf("post-change interval = %v, %v; want usage and measured zero iowait", s, err)
+	}
+}
+
+func TestCPUDecreasingIowaitInvalidatesWholeInterval(t *testing.T) {
+	proc := procTree(t, map[string]string{"stat": "cpu 100 0 100 1000 100 0 0 10\n"})
+	c := &CPU{Proc: proc}
+	_, _ = c.Collect()
+	if err := os.WriteFile(filepath.Join(proc.Root, "stat"), []byte("cpu 200 0 200 1100 50 0 0 20\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if s, err := c.Collect(); err != nil || len(s) != 0 {
+		t.Fatalf("decreasing iowait = %v, %v; want interval omitted", s, err)
 	}
 }
 
@@ -54,7 +109,7 @@ func TestCPUFullyIdleIntervalIsAMeasuredZero(t *testing.T) {
 	_, _ = c.Collect()
 	_ = os.WriteFile(filepath.Join(proc.Root, "stat"), []byte("cpu  10 0 10 200 0 0 0 0 0 0\n"), 0o644)
 	s, err := c.Collect()
-	if err != nil || len(s) != 1 || s[0].Value != 0 {
+	if err != nil || len(s) != 3 || byName(s)["cpu.usage_percent"] != 0 || byName(s)["cpu.iowait_percent"] != 0 || byName(s)["cpu.steal_percent"] != 0 {
 		t.Fatalf("idle interval = %v, %v; want a measured 0, not an omission", s, err)
 	}
 }

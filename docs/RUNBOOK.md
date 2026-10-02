@@ -66,6 +66,46 @@ against database corruption, not host loss).
 
 ## Failure playbooks
 
+**Resource stalls with modest CPU and free disk space (Change 25).**
+After updating the host agent, query the existing authenticated
+`GET /api/metrics?host=<id>&name=pressure.io.some_percent&latest=true` (and
+`pressure.io.full_percent`, `cpu.iowait_percent`, `cpu.steal_percent`). For a time series use
+the same host/name filters with `from`/`to`; `step=60` requests minute buckets.
+Use an existing operator session; never put its cookie/password in a URL or an incident report.
+The new series are diagnostic API data; the existing dashboard has no new pressure charts or
+thresholds. Inspect timestamps: `latest=true` can return old samples, and missing values from
+an older agent or an unsupported PSI kernel mean unknown, not healthy/zero.
+
+PSI `avg10` measures the share of time tasks are blocked over a ten-second window; `some` means
+at least one task and `full` means all non-idle tasks. CPU `full` is deliberately omitted because
+it is undefined at the system level. See [kernel PSI documentation](https://www.kernel.org/doc/html/latest/accounting/psi.html).
+CPU iowait is not a reliable standalone measure; Linux can decrease that counter, in which case
+the agent omits the interval. Correlate with PSI and kernel logs, not a single threshold.
+
+For a suspected incident, record UTC intervals, agent freshness, resource samples, and bounded
+`journalctl -k --since <start> --until <end>` / `journalctl -u systemd-journald` excerpts.
+Blocked `jbd2` tasks and journald watchdogs support a guest-visible storage wait; they do not
+by themselves identify a hypervisor/provider fault. Check available RAM, free space, scheduled
+backup/restore jobs and device errors before escalating to the provider. Do not disable the
+kernel warnings or spool fsync: a blocked disk can also stop the durable telemetry writer,
+so a gap is not evidence of a quiet host. Do not run destructive disk tests on production.
+
+**Availability coverage.**
+Keep the homepage probe and add distinct HTTP targets for the application's `/health/ready`
+and the monitoring server's `/health/ready` through the existing target UI/API when configuring
+production monitoring. Verify the response and no-cache policy before relying on a readiness
+URL; the application probe must exercise its database. Homepage success does not establish API
+or database health. A check run by this monitoring server cannot independently detect its own
+complete outage; an external observer is still needed for that case. Target creation is an
+operator action, not an automatic side effect of an agent upgrade.
+
+**Routine container messages marked as warnings.**
+Update the agent on the emitting host, not just the server. Change 25 recognizes explicit
+levels in supported log envelopes, including successful ACME maintenance and PostgreSQL `LOG`
+records written to stderr. Unrecognized output still follows the stream fallback and is not
+discarded. PostgreSQL `FATAL` and application `ERROR` remain visible errors. Historical stored
+events retain their old classification. SSH/network errors and kernel stalls are not suppressed.
+
 **Certificate was never issued (ACME mode).**
 Check `docker compose logs server` for the `obtain` log lines. Common causes: the DNS record does not
 point here yet (`dig`); port 80 is not actually reachable from the internet (test with

@@ -177,7 +177,9 @@ func tlsListener(t *testing.T, cert tls.Certificate) string {
 }
 
 func TestTLSTargetReportsDaysAndFailsOnAnExpiredCertificate(t *testing.T) {
-	good, goodLeaf := selfSigned(t, fixed.Add(-time.Hour), fixed.Add(9*24*time.Hour), "localhost")
+	// TLS verifies against wall time; fixed only controls the probe result timestamp.
+	real := time.Now()
+	good, goodLeaf := selfSigned(t, real.Add(-time.Hour), real.Add(9*24*time.Hour), "localhost")
 	pool := x509.NewCertPool()
 	pool.AddCert(goodLeaf)
 	res := checker(pool).Check(context.Background(), target(domain.KindTLS, tlsListener(t, good)))
@@ -185,7 +187,6 @@ func TestTLSTargetReportsDaysAndFailsOnAnExpiredCertificate(t *testing.T) {
 		t.Fatalf("%+v", res)
 	}
 
-	real := time.Now()
 	expired, expiredLeaf := selfSigned(t, real.Add(-48*time.Hour), real.Add(-24*time.Hour), "localhost")
 	pool2 := x509.NewCertPool()
 	pool2.AddCert(expiredLeaf)

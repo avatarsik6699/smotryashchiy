@@ -232,6 +232,10 @@ streak; it never emits a fabricated `0` (unknown stays unknown; a *measured* zer
 | Metric | Labels | Meaning |
 |--------|--------|---------|
 | `cpu.usage_percent` | — | 0–100, non-idle share of all CPUs since the previous tick (iowait counts as idle); the first tick emits none |
+| `cpu.iowait_percent`, `cpu.steal_percent` | — | 0–100, respective `/proc/stat` counter deltas divided by total CPU delta; optional fields must exist in both readings |
+| `pressure.cpu.some_percent` | — | system PSI `avg10`: percentage of time with at least one task waiting for CPU |
+| `pressure.memory.some_percent`, `pressure.io.some_percent` | — | system PSI `avg10`: percentage of time with at least one task stalled on that resource |
+| `pressure.memory.full_percent`, `pressure.io.full_percent` | — | system PSI `avg10`: percentage of time with all non-idle tasks stalled on that resource |
 | `memory.total_bytes`, `memory.used_bytes`, `memory.used_percent` | — | used = total − `MemAvailable` |
 | `swap.total_bytes`, `swap.used_bytes`, `swap.used_percent` | — | a host without swap reports total 0 and used_percent 0 |
 | `disk.total_bytes`, `disk.used_bytes`, `disk.used_percent` | `mount`, `device` | real filesystems only (ext2/3/4, xfs, btrfs, zfs, f2fs), one per device, ≤ 16 mounts; used_percent follows `df` (non-root-reserved blocks excluded) |
@@ -239,6 +243,15 @@ streak; it never emits a fabricated `0` (unknown stays unknown; a *measured* zer
 | `load.avg_1m`, `load.avg_5m`, `load.avg_15m` | — | `/proc/loadavg` |
 | `uptime.seconds` | — | `/proc/uptime` |
 | `cpu.count` | — | number of `cpuN` lines in `/proc/stat`, reported every tick (Change 22); load average is read relative to it |
+
+**Resource waits (Change 25).** CPU counters that decrease (including Linux iowait), change
+available field count or do not advance the total establish a new baseline without emitting a
+delta. Existing usage semantics stay compatible: iowait is idle, steal is included in non-idle.
+PSI reads `/proc/pressure/{cpu,memory,io}` without invoking external tools. Missing optional PSI
+files or invalid readings are omitted, never zero-filled; valid other resources remain measurable.
+Only finite `avg10` values in 0–100 are accepted. System-level CPU `full` is undefined and omitted.
+These diagnostic series use the existing authenticated metric API, rollups and stream; they do
+not add dashboard thresholds or change the current health assessment. Older agents omit them.
 
 **Offline buffer.** Every batch is first written to a durable spool (directory, mode `0700`, files
 `0600`, atomic write) together with its own `Idempotency-Key`, then sent oldest-first. A batch leaves
@@ -403,8 +416,15 @@ placeholder row.
 - **Log/event collection** (journald + Docker container logs): tailed continuously (not polled),
   forwarded as `events` (§4.1) with `level` mapped from syslog priority (`err`/`crit`+ → `error`,
   `warning` → `warn`, else `info`), `message` truncated to the existing 2048-byte cap, and labels
-  `unit` (journald) or `container` (Docker logs). A Docker log line has no priority: stdout maps to
-  `info`, stderr to `warn`. The server follows that contract for its own output (Change 21):
+  `unit` (journald) or `container` (Docker logs). Docker streams do not carry priority, so
+  recognized log envelopes supply severity (Change 25): top-level JSON `level`/`severity`,
+  anchored slog text, Zap console timestamp/level columns, PostgreSQL timestamp/PID/severity,
+  and leading Uvicorn-style severity prefixes. Debug/info/notice/log become `info`,
+  warn/warning become `warn`, error/fatal/dpanic become `error`, panic/critical become `critical`.
+  Unknown or malformed formats retain the stream fallback: stdout `info`, stderr `warn`.
+  Arbitrary severity words inside message bodies are not log metadata. Events keep their
+  original message, source labels and retention; historical events are not reclassified.
+  The server continues splitting its own output by level (Change 21):
   `info`-level records, including the per-request access line, go to stdout, and `warn`/`error`
   records (a recovered panic among them) go to stderr, so a monitored server does not report every
   API request as a warning. Bounded like any other event: the existing batch

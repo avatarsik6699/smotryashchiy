@@ -1,5 +1,7 @@
 # CHANGE 25 — Telemetry signal corrections
 
+Status: `archived`.
+
 ## Goal
 
 Correct Docker severity misclassification and expose the resource-wait measurements missing
@@ -55,7 +57,7 @@ See `docs/SPEC.md` §4c and §4h; the existing metric/event envelopes and API ro
 
 ## Gate Checks
 
-Use [STACK](../STACK.md)'s Go Fast Gate for B1, plus focused race checks for modified collectors
+Use [STACK](../../STACK.md)'s Go Fast Gate for B1, plus focused race checks for modified collectors
 and batch validation. T1 is documentation-only. Go LSP is unavailable per STACK; no frontend changes.
 
 Verification (2026-10-02): repository `gofmt` check, `go vet ./...` and

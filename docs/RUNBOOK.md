@@ -57,8 +57,11 @@ against database corruption, not host loss).
   records (the access line among them) go to stdout, warnings and errors to stderr, so an agent
   watching the server container reports routine requests as `info` (docs/SPEC.md §4h).
 - **Disk**: the SQLite file plus its `-wal`/`-shm` siblings under the `smotryashchiy-data` volume. Raw
-  telemetry and uptime results are purged after `SMOTRYASHCHIY_RAW_RETENTION_DAYS` (default 30); rollups
-  after `SMOTRYASHCHIY_ROLLUP_RETENTION_DAYS` (default 396). If disk use is unexpectedly high, check
+  telemetry and uptime results are purged after `SMOTRYASHCHIY_RAW_RETENTION_DAYS` (default 30; the
+  production server uses 14 since v0.4.0, architect decision 2026-10-19: raw host metrics filled the
+  20 GB disk), site pageviews after `SMOTRYASHCHIY_ANALYTICS_RETENTION_DAYS` (default 30); rollups
+  after `SMOTRYASHCHIY_ROLLUP_RETENTION_DAYS` (default 396). Purged rows free pages inside the file
+  for reuse; the file itself shrinks only after a `VACUUM`. If disk use is unexpectedly high, check
   `docker exec <container> /smotryashchiy admin backup --out - | wc -c` (the compressed database size)
   before lowering retention.
 - **Agents**: the dashboard's host rows show `STALE`/`OFFLINE` in text when an agent stops reporting;

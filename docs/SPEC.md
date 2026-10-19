@@ -551,9 +551,10 @@ Collect counts every outcome in memory — `stored`, `rate_limited`, `malformed`
 IP or User-Agent. The public answer stays `204` for every outcome.
 
 **Storage.** `sites (id, name, domain, created_at)`. `pageviews (id, site_id, ts, path,
-referrer_domain, visitor_hash, browser, os, device)`, raw TTL shared with §4.5
-(`SMOTRYASHCHIY_RAW_RETENTION_DAYS`). Every stats range (at most 30 days) fits inside the raw TTL,
-so stats read raw pageviews only. The daily rollup table `pageview_rollups_daily` that Change 14
+referrer_domain, visitor_hash, browser, os, device)`, with their own TTL
+(`SMOTRYASHCHIY_ANALYTICS_RETENTION_DAYS`, default 30, Change 28) apart from the raw telemetry TTL of
+§4.5, so trimming host metrics never cuts the stats range. Every stats range (at most 30 days) fits
+inside the default, so stats read raw pageviews only. The daily rollup table `pageview_rollups_daily` that Change 14
 added was written hourly and never read; Change 20 removed its job and dropped the table with a
 forward-only migration (every row was derivable from raw pageviews). Longer ranges would bring a
 rollup back together with a reader for it.

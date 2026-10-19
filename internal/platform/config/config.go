@@ -31,6 +31,9 @@ type Config struct {
 	RawRetentionDays int
 	// RollupRetentionDays is the TTL of hourly metric rollups.
 	RollupRetentionDays int
+	// AnalyticsRetentionDays is the TTL of site pageviews (docs/SPEC.md §4i), kept apart from the
+	// raw telemetry TTL so trimming host metrics does not cut the 30-day stats range (Change 28).
+	AnalyticsRetentionDays int
 	// WGPort is the UDP port of the in-process WireGuard endpoint (docs/SPEC.md §4b).
 	WGPort int
 	// TunnelCIDR is the tunnel subnet; the server takes its first host address.
@@ -55,31 +58,33 @@ type Config struct {
 }
 
 const (
-	envAddr       = "SMOTRYASHCHIY_ADDR"
-	envDBPath     = "SMOTRYASHCHIY_DB_PATH"
-	envProduction = "SMOTRYASHCHIY_PRODUCTION"
-	envRelease    = "SMOTRYASHCHIY_RELEASE"
-	envSecure     = "SMOTRYASHCHIY_SECURE_COOKIES"
-	envProxies    = "SMOTRYASHCHIY_TRUSTED_PROXY_CIDRS"
-	envRawDays    = "SMOTRYASHCHIY_RAW_RETENTION_DAYS"
-	envRollupDays = "SMOTRYASHCHIY_ROLLUP_RETENTION_DAYS"
-	envWGPort     = "SMOTRYASHCHIY_WG_PORT"
-	envTunnelCIDR = "SMOTRYASHCHIY_TUNNEL_CIDR"
-	envEndpoint   = "SMOTRYASHCHIY_PUBLIC_ENDPOINT"
-	envPublicURL  = "SMOTRYASHCHIY_PUBLIC_URL"
-	envTLSDomain  = "SMOTRYASHCHIY_TLS_DOMAIN"
-	envHTTPSAddr  = "SMOTRYASHCHIY_HTTPS_ADDR"
-	envACMEHTTP   = "SMOTRYASHCHIY_ACME_HTTP_ADDR"
-	envACMEEmail  = "SMOTRYASHCHIY_ACME_EMAIL"
-	envACMECA     = "SMOTRYASHCHIY_ACME_CA"
+	envAddr          = "SMOTRYASHCHIY_ADDR"
+	envDBPath        = "SMOTRYASHCHIY_DB_PATH"
+	envProduction    = "SMOTRYASHCHIY_PRODUCTION"
+	envRelease       = "SMOTRYASHCHIY_RELEASE"
+	envSecure        = "SMOTRYASHCHIY_SECURE_COOKIES"
+	envProxies       = "SMOTRYASHCHIY_TRUSTED_PROXY_CIDRS"
+	envRawDays       = "SMOTRYASHCHIY_RAW_RETENTION_DAYS"
+	envAnalyticsDays = "SMOTRYASHCHIY_ANALYTICS_RETENTION_DAYS"
+	envRollupDays    = "SMOTRYASHCHIY_ROLLUP_RETENTION_DAYS"
+	envWGPort        = "SMOTRYASHCHIY_WG_PORT"
+	envTunnelCIDR    = "SMOTRYASHCHIY_TUNNEL_CIDR"
+	envEndpoint      = "SMOTRYASHCHIY_PUBLIC_ENDPOINT"
+	envPublicURL     = "SMOTRYASHCHIY_PUBLIC_URL"
+	envTLSDomain     = "SMOTRYASHCHIY_TLS_DOMAIN"
+	envHTTPSAddr     = "SMOTRYASHCHIY_HTTPS_ADDR"
+	envACMEHTTP      = "SMOTRYASHCHIY_ACME_HTTP_ADDR"
+	envACMEEmail     = "SMOTRYASHCHIY_ACME_EMAIL"
+	envACMECA        = "SMOTRYASHCHIY_ACME_CA"
 
 	defaultWGPort     = 51820
 	defaultTunnelCIDR = "10.99.0.0/16"
 	defaultHTTPSAddr  = ":8443"
 	defaultACMEHTTP   = ":8080"
 
-	defaultRawRetentionDays    = 30
-	defaultRollupRetentionDays = 396 // 13 months
+	defaultRawRetentionDays       = 30
+	defaultRollupRetentionDays    = 396 // 13 months
+	defaultAnalyticsRetentionDays = 30  // the longest stats range
 )
 
 var releasePattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
@@ -104,6 +109,10 @@ func Load(defaultRelease string) (Config, error) {
 		return Config{}, err
 	}
 	rollupDays, err := getPositiveInt(envRollupDays, defaultRollupRetentionDays)
+	if err != nil {
+		return Config{}, err
+	}
+	analyticsDays, err := getPositiveInt(envAnalyticsDays, defaultAnalyticsRetentionDays)
 	if err != nil {
 		return Config{}, err
 	}
@@ -148,12 +157,13 @@ func Load(defaultRelease string) (Config, error) {
 		SecureCookies:     secureCookies,
 		TrustedProxyCIDRs: proxies,
 
-		RawRetentionDays:    rawDays,
-		RollupRetentionDays: rollupDays,
-		WGPort:              wgPort,
-		TunnelCIDR:          tunnelCIDR,
-		PublicEndpoint:      endpoint,
-		PublicURL:           publicURL,
+		RawRetentionDays:       rawDays,
+		RollupRetentionDays:    rollupDays,
+		AnalyticsRetentionDays: analyticsDays,
+		WGPort:                 wgPort,
+		TunnelCIDR:             tunnelCIDR,
+		PublicEndpoint:         endpoint,
+		PublicURL:              publicURL,
 
 		TLSDomain:    tlsDomain,
 		HTTPSAddr:    getOr(envHTTPSAddr, defaultHTTPSAddr),

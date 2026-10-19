@@ -96,7 +96,7 @@ func runServer(stdout, stderr io.Writer) error {
 	uptimehttp.NewHandlers(uptimeSvc).Register(srv.Mux)
 	go uptimeSvc.Run(ctx)
 	analyticsSvc := analyticsapp.NewService(analyticsinfra.NewStore(sqlDB), time.Now,
-		analyticsapp.Options{Retention: time.Duration(cfg.RawRetentionDays) * 24 * time.Hour})
+		analyticsapp.Options{Retention: time.Duration(cfg.AnalyticsRetentionDays) * 24 * time.Hour})
 	analyticshttp.NewHandlers(analyticsSvc).Register(srv.Mux)
 	analyticshttp.NewCollectHandlers(analyticsSvc, cfg.TrustedProxyCIDRs).Register(srv.Mux)
 	analyticshttp.NewTrackHandlers().Register(srv.Mux)

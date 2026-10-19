@@ -12,7 +12,7 @@ const sha = "0123456789abcdef0123456789abcdef01234567"
 
 func clearEnv(t *testing.T) {
 	t.Helper()
-	for _, k := range []string{envAddr, envDBPath, envProduction, envRelease, envSecure, envProxies, envRawDays, envRollupDays, envWGPort, envTunnelCIDR, envEndpoint, envPublicURL, envTLSDomain, envHTTPSAddr, envACMEHTTP, envACMEEmail, envACMECA} {
+	for _, k := range []string{envAddr, envDBPath, envProduction, envRelease, envSecure, envProxies, envRawDays, envRollupDays, envAnalyticsDays, envWGPort, envTunnelCIDR, envEndpoint, envPublicURL, envTLSDomain, envHTTPSAddr, envACMEHTTP, envACMEEmail, envACMECA} {
 		t.Setenv(k, "")
 	}
 }
@@ -95,6 +95,14 @@ func TestLoadRetentionDefaultsAndOverrides(t *testing.T) {
 	cfg, err = Load("development")
 	if err != nil || cfg.RawRetentionDays != 7 || cfg.RollupRetentionDays != 90 {
 		t.Fatalf("overrides = %d/%d, err = %v", cfg.RawRetentionDays, cfg.RollupRetentionDays, err)
+	}
+	// Change 28: pageviews keep their own TTL; a shorter raw TTL does not shorten it.
+	if cfg.AnalyticsRetentionDays != 30 {
+		t.Fatalf("analytics default = %d, want 30 regardless of the raw TTL", cfg.AnalyticsRetentionDays)
+	}
+	t.Setenv(envAnalyticsDays, "60")
+	if cfg, err = Load("development"); err != nil || cfg.AnalyticsRetentionDays != 60 {
+		t.Fatalf("analytics override = %d, err = %v", cfg.AnalyticsRetentionDays, err)
 	}
 }
 

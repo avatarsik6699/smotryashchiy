@@ -35,6 +35,7 @@ printf '%s\n' "$PASSWORD" | go run ./cmd/smotryashchiy admin set-password   # >=
 | Variable | Default | Meaning |
 |----------|---------|---------|
 | `SMOTRYASHCHIY_RAW_RETENTION_DAYS` | `30` | TTL of raw metrics, checks, events and ingestion batches |
+| `SMOTRYASHCHIY_ANALYTICS_RETENTION_DAYS` | `30` | TTL of site pageviews (Change 28); keep ≥ 30 so the 30-day stats range is whole |
 | `SMOTRYASHCHIY_ROLLUP_RETENTION_DAYS` | `396` | TTL of hourly metric rollups (13 months) |
 | `SMOTRYASHCHIY_WG_PORT` | `51820` | UDP port of the in-process WireGuard endpoint |
 | `SMOTRYASHCHIY_TUNNEL_CIDR` | `10.99.0.0/16` | Tunnel subnet (IPv4, /8../24); the server takes its first host address |

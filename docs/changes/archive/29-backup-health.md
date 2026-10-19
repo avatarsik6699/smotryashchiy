@@ -9,7 +9,7 @@
 | Change | `29` |
 | Slug | `backup-health` |
 | Title | Backups: health ledger and off-host backup recipe |
-| Status | `active` |
+| Status | `archived` |
 | Branch | `feature/29-backup-health` |
 
 ---
@@ -134,7 +134,7 @@ ledger, thresholds) and the Files list above.
 ## Gate Checks
 
 > Fast Gate runs per task in `/work`; Full Gate and (with `--release`) Release Gate run once in
-> `/ship`. Both are defined in [docs/STACK.md](../STACK.md) — this section only records
+> `/ship`. Both are defined in [docs/STACK.md](../../STACK.md) — this section only records
 > change-specific overrides.
 
 UI verified with Playwriter at 1280 and 390 px with fixture documents (fresh, stale, failed,

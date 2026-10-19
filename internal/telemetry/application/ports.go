@@ -62,6 +62,8 @@ type Repository interface {
 	Hosts(ctx context.Context) ([]domain.Host, error)
 	// MetricRollups returns hourly aggregates, oldest first; From/To bound the hour start.
 	MetricRollups(ctx context.Context, q MetricQuery) ([]domain.RollupPoint, error)
+	// Documents returns the latest document of kind from every host (Change 27).
+	Documents(ctx context.Context, kind string) ([]domain.HostDocument, error)
 }
 
 // MaintenanceRepository is the persistence port for the rollup and retention jobs.

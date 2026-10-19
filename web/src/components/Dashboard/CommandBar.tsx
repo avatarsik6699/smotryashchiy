@@ -10,7 +10,7 @@ const CONNECTION_TEXT: Record<ConnectionState, string> = {
   offline: 'offline',
 }
 
-export type View = 'monitoring' | 'analytics' | 'guide'
+export type View = 'monitoring' | 'analytics' | 'sales' | 'guide'
 
 interface CommandBarProps {
   connection: ConnectionState
@@ -40,6 +40,9 @@ export function CommandBar({ connection, view, onViewChange, onAddHost, onAddSit
         </button>
         <button type="button" className={styles.tab} data-active={view === 'analytics'} onClick={() => onViewChange('analytics')}>
           analytics
+        </button>
+        <button type="button" className={styles.tab} data-active={view === 'sales'} onClick={() => onViewChange('sales')}>
+          sales
         </button>
         <button type="button" className={styles.tab} data-active={view === 'guide'} onClick={() => onViewChange('guide')}>
           guide

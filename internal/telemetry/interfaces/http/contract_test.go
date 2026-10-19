@@ -390,3 +390,28 @@ func TestReadEndpointsRequireSession(t *testing.T) {
 		}
 	}
 }
+
+// Change 27: the latest document per host and kind is served to a session, newest replacing older.
+func TestDocumentsLatestPerHostAndKind(t *testing.T) {
+	e := newEnv(t)
+	for i, body := range []string{`{"version":1}`, `{"version":2}`} {
+		b := domain.Batch{SchemaVersion: "1.0", Documents: []domain.Document{{Kind: "business", Body: json.RawMessage(body)}}}
+		if _, err := e.ingest(fmt.Sprintf("doc-%d", i), b); err != nil {
+			t.Fatal(err)
+		}
+	}
+	code, body := e.get(t, "/api/documents?kind=business", true)
+	if code != 200 || !strings.Contains(body, `"body":{"version":2}`) || !strings.Contains(body, `"host_name":"web-1"`) ||
+		strings.Count(body, `"kind":"business"`) != 1 {
+		t.Fatalf("documents: %d %s", code, body)
+	}
+	if code, body := e.get(t, "/api/documents?kind=other", true); code != 200 || body != `{"documents":[]}`+"\n" {
+		t.Fatalf("other kind: %d %q", code, body)
+	}
+	if code, _ := e.get(t, "/api/documents", true); code != 400 {
+		t.Fatalf("missing kind = %d, want 400", code)
+	}
+	if code, _ := e.get(t, "/api/documents?kind=business", false); code != 401 {
+		t.Fatalf("no session = %d, want 401", code)
+	}
+}

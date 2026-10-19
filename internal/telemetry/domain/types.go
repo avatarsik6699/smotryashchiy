@@ -46,12 +46,29 @@ type Event struct {
 	Labels  map[string]string
 }
 
+// Document is a whole JSON object a host reports in place of its previous one of the same kind,
+// such as the tracked site's business summary (docs/SPEC.md §4.1, Change 27).
+type Document struct {
+	Kind string
+	Body json.RawMessage
+}
+
+// HostDocument is a stored document with the host that reported it.
+type HostDocument struct {
+	HostID     string          `json:"host_id"`
+	HostName   string          `json:"host_name"`
+	Kind       string          `json:"kind"`
+	ReceivedAt time.Time       `json:"received_at"`
+	Body       json.RawMessage `json:"body"`
+}
+
 // Batch is the unit a producer submits and the unit that is stored atomically.
 type Batch struct {
 	SchemaVersion string
 	Metrics       []Metric
 	Checks        []Check
 	Events        []Event
+	Documents     []Document
 }
 
 // Len returns the total number of records in the batch.

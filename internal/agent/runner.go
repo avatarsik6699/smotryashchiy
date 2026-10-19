@@ -27,9 +27,11 @@ type RunConfig struct {
 	Collectors      []collect.Collector
 	CheckCollectors []collect.CheckCollector
 	EventCollectors []collect.EventCollector
-	Dial            Dialer
-	Now             func() time.Time
-	Log             *slog.Logger
+	// DocumentCollectors yield whole JSON documents, such as a business summary (Change 27).
+	DocumentCollectors []collect.DocumentCollector
+	Dial               Dialer
+	Now                func() time.Time
+	Log                *slog.Logger
 }
 
 // ValidateInterval reports whether d is inside the allowed range.
@@ -116,7 +118,19 @@ func Run(ctx context.Context, rc RunConfig) error {
 			recovered(c.Name())
 			events = append(events, got...)
 		}
-		batch, skipped, err := BuildBatch(rc.Now(), samples, checks, events)
+		var docs []collect.Document
+		for _, c := range rc.DocumentCollectors {
+			got, err := c.Collect()
+			if err != nil {
+				warnOnce(c.Name(), err)
+				continue
+			}
+			recovered(c.Name())
+			if got != nil {
+				docs = append(docs, *got)
+			}
+		}
+		batch, skipped, err := BuildBatchWithDocuments(rc.Now(), samples, checks, events, docs)
 		if err != nil {
 			rc.Log.Error("could not encode batch", "error", err)
 			return

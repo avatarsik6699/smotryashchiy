@@ -117,6 +117,13 @@ Validation (rejects the whole batch with a field-addressed error; nothing is par
 - `labels`: ≤ 16 keys, key `^[a-z][a-z0-9_]{0,63}$`, value ≤ 128 bytes. `meta`: JSON object ≤ 4 KiB.
 - `ts`: RFC 3339, normalized to UTC; producer time more than 5 minutes in the future is rejected.
 - ≤ 1000 records per batch; `Idempotency-Key` ≤ 128 bytes.
+- `documents` (Change 27, additive 1.x): ≤ 4 per batch, `kind` `^[a-z][a-z0-9_.]{0,63}$` unique
+  within the batch, `body` a JSON object ≤ 512 KiB. A batch may carry only documents. The server keeps
+  the latest document per host and kind (a later batch replaces it; the host's deletion removes it)
+  and serves them to a session at `GET /api/documents?kind=K` →
+  `{"documents":[{host_id, host_name, kind, received_at, body}]}`. The agent's `run
+  --business-file PATH` reports a JSON file as kind `business` once at start and whenever its content
+  changes; a missing file is quiet, an invalid one is logged once.
 
 ### 4.2 Storage semantics
 
@@ -578,6 +585,15 @@ in the change that introduces them.
 below change:
 - A third tab, `guide`, joins `monitoring` and `analytics`. It is still local view state: no
   router and no deep links.
+- **Sales (Change 27, architect decision 2026-10-19).** A tab `sales` between `analytics` and `guide`
+  shows each host's `business` document in the schema `kodumka.business/1` the tracked site writes
+  hourly: a source line (host, summary age with a pulse that turns to watch after two hours, billing
+  and paywall flags), a 7/30/90-day period toggle, the measurements revenue, paid orders, orders →
+  paid, active access and access ending in 7 days, the НПД yearly limit as a meter that becomes a state
+  at 70 % and 85 %, payment problems only when present, the last provider check, and a day ledger
+  (per plan paid / orders, refunds, revenue with an inline bar, sign-ups, confirmed) with totals and
+  all-time sign-up → payment. Days are the site's (Moscow). The view loads when opened and refreshes
+  every five minutes; nothing streams it. A summary in another schema is not shown.
 - The guide is a step-by-step course on reading the dashboard, with 14 lessons from how data
   flows to a triage checklist. Each lesson shows the live values of the operator's own hosts,
   judged by the same rules as the dashboard.

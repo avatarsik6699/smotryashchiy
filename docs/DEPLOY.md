@@ -56,6 +56,10 @@ smotryashchiy agent run --interval 10s
 
 The agent needs outbound UDP to `SMOTRYASHCHIY_PUBLIC_ENDPOINT` only; it opens no ports.
 
+A host that also writes a business summary for the **sales** view (Change 27) passes its path:
+`smotryashchiy agent run --interval 10s --business-file /var/lib/infraege/business/summary.json`.
+The agent sends the file when it changes; the server keeps the latest one.
+
 ## Health
 
 `GET /health/ready` answers `200` with the release SHA and `503` when the database cannot be reached. The

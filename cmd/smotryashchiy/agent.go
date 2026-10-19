@@ -17,7 +17,7 @@ import (
 	"github.com/avatarsik6699/smotryashchiy/internal/agent/collect"
 )
 
-const agentUsage = "usage: smotryashchiy agent enroll --server URL --secret S [--config PATH] | agent run [--config PATH] [--interval 10s] [--spool-dir DIR] | agent push-file FILE [--config PATH] [--key KEY]"
+const agentUsage = "usage: smotryashchiy agent enroll --server URL --secret S [--config PATH] | agent run [--config PATH] [--interval 10s] [--spool-dir DIR] [--business-file PATH] | agent push-file FILE [--config PATH] [--key KEY]"
 
 const defaultAgentConfig = "agent.json"
 
@@ -89,6 +89,7 @@ func runAgentLoop(ctx context.Context, args []string) error {
 	path := fs.String("config", defaultAgentConfig, "agent config path")
 	interval := fs.Duration("interval", agent.DefaultInterval, "collection interval (5s..5m)")
 	spoolDir := fs.String("spool-dir", "", "offline buffer directory (default: <config dir>/spool)")
+	businessFile := fs.String("business-file", "", "JSON business summary to report when it changes (Change 27)")
 	if err := fs.Parse(args); err != nil || fs.NArg() != 0 {
 		return errors.New(agentUsage)
 	}
@@ -102,9 +103,14 @@ func runAgentLoop(ctx context.Context, args []string) error {
 	if *spoolDir == "" {
 		*spoolDir = filepath.Join(filepath.Dir(*path), "spool")
 	}
+	var documents []collect.DocumentCollector
+	if *businessFile != "" {
+		documents = append(documents, &collect.FileDocument{Kind: "business", Path: *businessFile})
+	}
 	return agent.Run(ctx, agent.RunConfig{
-		Interval: *interval,
-		SpoolDir: *spoolDir,
+		DocumentCollectors: documents,
+		Interval:           *interval,
+		SpoolDir:           *spoolDir,
 		Collectors: []collect.Collector{
 			&collect.CPU{Proc: collect.DefaultProc},
 			collect.CPUCount{Proc: collect.DefaultProc},

@@ -15,6 +15,8 @@ import (
 // Contract limits (docs/SPEC.md §4.1).
 const (
 	MaxRecords        = 1000
+	MaxDocuments      = 4
+	MaxDocumentBytes  = 512 << 10
 	MaxLabels         = 16
 	MaxLabelValue     = 128
 	MaxMessage        = 2048
@@ -90,8 +92,30 @@ func (b Batch) Normalize(now time.Time) (Batch, error) {
 		}
 		out.Events = append(out.Events, Event{TS: ts, Level: e.Level, Message: e.Message, Labels: labels})
 	}
+	if len(b.Documents) > MaxDocuments {
+		return Batch{}, invalid("documents", "contains %d documents, limit is %d", len(b.Documents), MaxDocuments)
+	}
+	kinds := map[string]bool{}
+	for i, d := range b.Documents {
+		field := fmt.Sprintf("documents[%d]", i)
+		if !documentKindRe.MatchString(d.Kind) {
+			return Batch{}, invalid(field+".kind", "must match %s", documentKindRe)
+		}
+		if kinds[d.Kind] {
+			return Batch{}, invalid(field+".kind", "repeats %q in one batch", d.Kind)
+		}
+		kinds[d.Kind] = true
+		body := strings.TrimSpace(string(d.Body))
+		if len(body) > MaxDocumentBytes || !strings.HasPrefix(body, "{") || !json.Valid([]byte(body)) {
+			return Batch{}, invalid(field+".body", "must be a JSON object of at most %d bytes", MaxDocumentBytes)
+		}
+		out.Documents = append(out.Documents, Document{Kind: d.Kind, Body: json.RawMessage(body)})
+	}
 	return out, nil
 }
+
+// documentKindRe names a document kind, such as "business" (Change 27).
+var documentKindRe = regexp.MustCompile(`^[a-z][a-z0-9_.]{0,63}$`)
 
 func common(field, name string, ts time.Time, labels map[string]string, now time.Time) (time.Time, map[string]string, error) {
 	if !nameRe.MatchString(name) {

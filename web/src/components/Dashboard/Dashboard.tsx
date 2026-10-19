@@ -11,6 +11,8 @@ import { hostState } from '../../domain/freshness'
 import { useNow } from '../../hooks/useNow'
 import { AddSiteDialog } from '../Analytics/AddSiteDialog'
 import { AnalyticsView } from '../Analytics/AnalyticsView'
+import { SalesView } from '../Sales/SalesView'
+import { useSales } from '../../data/useSales'
 import { AddHostDialog } from './AddHostDialog'
 import { AddTargetDialog } from './AddTargetDialog'
 import { CommandBar, type View } from './CommandBar'
@@ -52,7 +54,7 @@ interface DashboardProps {
   store?: DashboardStore
 }
 
-/** The whole product on three views: Monitoring (default), Analytics and the Guide (docs/SPEC.md §5). */
+/** The whole product on four views: Monitoring (default), Analytics, Sales and the Guide (docs/SPEC.md §5). */
 export function Dashboard({ onLogout, store }: DashboardProps) {
   return (
     <DashboardProvider store={store}>
@@ -155,6 +157,8 @@ function DashboardView({ onLogout }: { onLogout: () => Promise<void> }) {
           </>
         ) : view === 'analytics' ? (
           <AnalyticsView status={sites.status} error={sites.error} sites={sites.sites} onAddSite={() => setAddingSite(true)} />
+        ) : view === 'sales' ? (
+          <SalesSection now={now} />
         ) : (
           <Suspense
             fallback={
@@ -173,4 +177,10 @@ function DashboardView({ onLogout }: { onLogout: () => Promise<void> }) {
     </div>
     </GuideNavContext.Provider>
   )
+}
+
+/** Sales loads only while its view is open: a summary changes hourly, nothing streams it (Change 27). */
+function SalesSection({ now }: { now: number }) {
+  const sales = useSales()
+  return <SalesView status={sales.status} error={sales.error} documents={sales.documents} now={now} onRetry={sales.reload} />
 }

@@ -24,6 +24,22 @@ func (h *Handlers) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/metrics", h.metrics)
 	mux.HandleFunc("GET /api/checks", h.checks)
 	mux.HandleFunc("GET /api/events", h.events)
+	mux.HandleFunc("GET /api/documents", h.documents)
+}
+
+// documents serves the latest document of ?kind= from every host (Change 27).
+func (h *Handlers) documents(w http.ResponseWriter, r *http.Request) {
+	kind := r.URL.Query().Get("kind")
+	if kind == "" {
+		apierror.Write(w, apierror.Invalid("kind is required"))
+		return
+	}
+	docs, err := h.service.Documents(r.Context(), kind)
+	if err != nil {
+		apierror.Write(w, err)
+		return
+	}
+	writeJSON(w, map[string]any{"documents": docs})
 }
 
 // Response items are explicit structs (never omitempty) so a zero value is always serialized.

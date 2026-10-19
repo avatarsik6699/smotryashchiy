@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -275,5 +276,20 @@ func TestValidateInterval(t *testing.T) {
 		if err := ValidateInterval(d); (err == nil) != ok {
 			t.Errorf("ValidateInterval(%v) = %v, want ok=%v", d, err, ok)
 		}
+	}
+}
+
+// Change 27: a tick with only a changed document still produces a batch, which carries it.
+func TestBuildBatchCarriesDocuments(t *testing.T) {
+	raw, _, err := BuildBatchWithDocuments(time.Now(), nil, nil, nil,
+		[]collect.Document{{Kind: "business", Body: json.RawMessage(`{"a":1}`)}})
+	if err != nil || raw == nil {
+		t.Fatalf("raw=%s err=%v", raw, err)
+	}
+	if !strings.Contains(string(raw), `"documents":[{"kind":"business","body":{"a":1}}]`) {
+		t.Fatalf("batch = %s", raw)
+	}
+	if raw, _, _ := BuildBatch(time.Now(), []collect.Sample{{Name: "a.b", Value: 1}}, nil, nil); strings.Contains(string(raw), "documents") {
+		t.Fatalf("batch without documents names the field: %s", raw)
 	}
 }

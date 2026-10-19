@@ -15,6 +15,13 @@ type wireBatch struct {
 	Metrics       []wireMetric `json:"metrics"`
 	Checks        []wireCheck  `json:"checks"`
 	Events        []wireEvent  `json:"events"`
+	// Change 27: an additive 1.x field; older servers ignore it.
+	Documents []wireDocument `json:"documents"`
+}
+
+type wireDocument struct {
+	Kind string          `json:"kind"`
+	Body json.RawMessage `json:"body"`
 }
 
 type wireMetric struct {
@@ -57,6 +64,9 @@ func DecodeBatch(data []byte) (Batch, error) {
 	}
 	for _, e := range w.Events {
 		b.Events = append(b.Events, Event{TS: deref(e.TS), Level: e.Level, Message: e.Message, Labels: e.Labels})
+	}
+	for _, d := range w.Documents {
+		b.Documents = append(b.Documents, Document{Kind: d.Kind, Body: d.Body})
 	}
 	return b, nil
 }

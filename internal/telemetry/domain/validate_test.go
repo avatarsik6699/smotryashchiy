@@ -208,3 +208,33 @@ func TestCanonicalLabelsAreOrderIndependent(t *testing.T) {
 		t.Fatalf("malformed -> %v", got)
 	}
 }
+
+// Change 27: documents are an additive 1.x field; a batch may carry only documents.
+func TestDocumentsDecodeAndValidate(t *testing.T) {
+	now := time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC)
+	b, err := DecodeBatch([]byte(`{"schema_version":"1.0","documents":[{"kind":"business","body":{"schema":"kodumka.business/1","funnel":[]}}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := b.Normalize(now)
+	if err != nil {
+		t.Fatalf("document-only batch: %v", err)
+	}
+	if len(out.Documents) != 1 || out.Documents[0].Kind != "business" || !strings.Contains(string(out.Documents[0].Body), `"funnel":[]`) {
+		t.Fatalf("documents = %+v", out.Documents)
+	}
+	doc := func(kind, body string) Document { return Document{Kind: kind, Body: json.RawMessage(body)} }
+	big := `{"x":"` + strings.Repeat("a", MaxDocumentBytes) + `"}`
+	for name, docs := range map[string][]Document{
+		"bad kind":      {doc("Business", `{}`)},
+		"array body":    {doc("business", `[]`)},
+		"invalid json":  {doc("business", `{"a":`)},
+		"too large":     {doc("business", big)},
+		"repeated kind": {doc("business", `{}`), doc("business", `{}`)},
+		"too many":      {doc("a", `{}`), doc("b", `{}`), doc("c", `{}`), doc("d", `{}`), doc("e", `{}`)},
+	} {
+		if _, err := (Batch{SchemaVersion: "1.0", Documents: docs}).Normalize(now); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}

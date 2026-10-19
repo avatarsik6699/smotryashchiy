@@ -139,6 +139,16 @@ func (s *Store) Store(ctx context.Context, hostID, key string, receivedAt time.T
 			result.Duplicates.Events++
 		}
 	}
+	// Change 27: a document replaces the host's previous one of its kind. The spool delivers
+	// oldest first, so a later batch always carries the newer document.
+	for _, d := range batch.Documents {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO documents (host_id, kind, received_at, body) VALUES (?, ?, ?, ?)
+			 ON CONFLICT (host_id, kind) DO UPDATE SET received_at = excluded.received_at, body = excluded.body`,
+			hostID, d.Kind, receivedAt.UnixMilli(), string(d.Body)); err != nil {
+			return application.StoreResult{}, fmt.Errorf("telemetry: store document: %w", err)
+		}
+	}
 	if _, err := tx.ExecContext(ctx, `UPDATE hosts SET last_seen_at = ? WHERE id = ?`, receivedAt.UnixMilli(), hostID); err != nil {
 		return application.StoreResult{}, fmt.Errorf("telemetry: update last_seen_at: %w", err)
 	}
@@ -334,4 +344,29 @@ func (s *Store) Events(ctx context.Context, q application.EventQuery) ([]domain.
 		events = append(events, e)
 	}
 	return events, rows.Err()
+}
+
+// Documents returns the latest document of kind from every host, by host name.
+func (s *Store) Documents(ctx context.Context, kind string) ([]domain.HostDocument, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT d.host_id, h.name, d.kind, d.received_at, d.body
+		 FROM documents AS d JOIN hosts AS h ON h.id = d.host_id
+		 WHERE d.kind = ? ORDER BY h.name`, kind)
+	if err != nil {
+		return nil, fmt.Errorf("telemetry: query documents: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := []domain.HostDocument{}
+	for rows.Next() {
+		var d domain.HostDocument
+		var received int64
+		var body string
+		if err := rows.Scan(&d.HostID, &d.HostName, &d.Kind, &received, &body); err != nil {
+			return nil, fmt.Errorf("telemetry: scan document: %w", err)
+		}
+		d.ReceivedAt = time.UnixMilli(received).UTC()
+		d.Body = json.RawMessage(body)
+		out = append(out, d)
+	}
+	return out, rows.Err()
 }

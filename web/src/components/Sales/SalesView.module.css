@@ -1,0 +1,267 @@
+/* Sales (Change 27): one ruled ledger per reporting site — source line, measurements, state, days.
+   No cards: hairlines and tabular alignment carry the structure (docs/reference/DESIGN.md). */
+
+.site {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.site + .site {
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--hairline);
+}
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+}
+
+.title {
+  margin: 0;
+  font-size: clamp(1.25rem, 3vw, 1.5rem);
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.source {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px var(--space-1);
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+.pulse {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--status-unreachable);
+}
+
+.source[data-state='ok'] .pulse,
+.problem[data-level='ok'] .pulse {
+  background: var(--status-ok);
+}
+
+.source[data-state='stale'] .pulse,
+.problem[data-level='warn'] .pulse {
+  background: var(--status-warn);
+}
+
+.problem[data-level='critical'] .pulse {
+  background: var(--status-critical);
+}
+
+.muted {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.rangeToggle {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.rangeButton {
+  padding: 2px var(--space-1);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.rangeButton:hover,
+.rangeButton:focus-visible {
+  color: var(--text);
+}
+
+.rangeButton[data-active='true'] {
+  border-color: var(--text-muted);
+  color: var(--text);
+}
+
+.measures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--space-3) var(--space-4);
+  margin: 0;
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.measure {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.label {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.value {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.hint {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+
+.status {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.npd {
+  display: grid;
+  grid-template-columns: auto auto minmax(120px, 1fr);
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 0.875rem;
+}
+
+.meter {
+  position: relative;
+  height: 4px;
+  overflow: hidden;
+  border-radius: var(--radius);
+  background: var(--raised);
+}
+
+.meterFill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--text-muted);
+}
+
+/* The limit is a state once it nears the line; below 70 % it is only a measurement. */
+.npd[data-level='warn'] .meterFill {
+  background: var(--status-warn);
+}
+
+.npd[data-level='critical'] .meterFill {
+  background: var(--status-critical);
+}
+
+.problems {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.problem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.block {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.block > h3 {
+  margin: 0;
+}
+
+.scroll {
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+
+.table th,
+.table td {
+  padding: 6px var(--space-2) 6px 0;
+  border-bottom: 1px solid var(--hairline);
+  text-align: left;
+  font-weight: 400;
+}
+
+.table thead th {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.table tbody tr:hover {
+  background: var(--raised);
+}
+
+/* A day with no orders and no sign-ups recedes; the ledger keeps it so gaps are visible. */
+.table tbody tr[data-empty='true'] {
+  color: var(--text-muted);
+}
+
+.table tfoot th,
+.table tfoot td {
+  border-bottom: 0;
+  font-weight: 650;
+}
+
+.table .num {
+  text-align: right;
+}
+
+.barHead,
+.barCell {
+  width: 30%;
+  min-width: 80px;
+}
+
+.bar {
+  display: block;
+  height: 6px;
+  min-width: 0;
+  border-radius: var(--radius);
+  background: var(--accent);
+  opacity: 0.55;
+}
+
+.code {
+  color: var(--text);
+}
+
+@media (max-width: 720px) {
+  .rangeToggle {
+    margin-left: 0;
+  }
+
+  .npd {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
+  .value {
+    font-size: 1.25rem;
+  }
+}

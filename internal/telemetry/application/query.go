@@ -25,6 +25,11 @@ const (
 // Hosts lists every registered host ordered by name.
 func (s *Service) Hosts(ctx context.Context) ([]domain.Host, error) { return s.repo.Hosts(ctx) }
 
+// Documents returns the latest document of a kind from every host (docs/SPEC.md §4.1, Change 27).
+func (s *Service) Documents(ctx context.Context, kind string) ([]domain.HostDocument, error) {
+	return s.repo.Documents(ctx, kind)
+}
+
 func validateStep(q MetricQuery) error {
 	if q.Step == 0 {
 		return nil

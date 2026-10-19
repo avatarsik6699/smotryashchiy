@@ -68,6 +68,9 @@ against database corruption, not host loss).
   `unknown_site`, `origin_mismatch`, `error`). A site that stops counting after a domain move shows
   growing `origin_mismatch`; storage failures show as `error` with an `analytics collect failed`
   log line (no IP or User-Agent). Counters reset on restart.
+- **Sales** (Change 27): the source line shows the summary's age; past two hours it reads stale —
+  check the site's hourly billing timer (`journalctl -u infraege-billing-hourly`) and that the agent
+  unit runs with `--business-file`. `GET /api/documents?kind=business` shows what the server holds.
 
 ## Failure playbooks
 

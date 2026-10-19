@@ -2,6 +2,7 @@ package http
 
 import (
 	"bytes"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -204,5 +205,55 @@ func TestCollectStillAcceptsBeaconsFromOlderSnippets(t *testing.T) {
 	}
 	if stats.Pageviews != 1 {
 		t.Fatalf("Pageviews = %d, want the old-format beacon stored", stats.Pageviews)
+	}
+}
+
+// Change 26: every collect outcome is counted while the public answer stays 204; the counters are
+// read through the session-gated GET /api/collect/stats.
+func TestCollectCountsEveryOutcome(t *testing.T) {
+	srv, svc := newTestServer(t)
+	site, err := svc.CreateSite(t.Context(), domain.NewSite{Name: "A", Domain: "a.example"})
+	if err != nil {
+		t.Fatalf("CreateSite: %v", err)
+	}
+	beacon := []byte(`{"site":"` + site.ID + `","url":"/"}`)
+	for _, c := range []struct {
+		origin string
+		body   []byte
+	}{
+		{"https://a.example", beacon},
+		{"https://other.example", beacon},
+		{"https://a.example", []byte(`{"site":"missing","url":"/"}`)},
+		{"https://a.example", []byte(`{"url":"/"}`)},
+		{"https://a.example", []byte(`not json`)},
+	} {
+		if resp := post(t, srv.URL+"/api/collect", c.origin, c.body); resp.StatusCode != http.StatusNoContent {
+			t.Fatalf("status = %d, want 204", resp.StatusCode)
+		}
+	}
+	for range 6 { // past the burst left after the five above
+		post(t, srv.URL+"/api/collect", "https://a.example", beacon)
+	}
+
+	resp, err := http.Get(srv.URL + "/api/collect/stats")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var got struct {
+		Outcomes map[string]int64 `json:"outcomes"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	for outcome, want := range map[string]int64{
+		"stored": 1, "origin_mismatch": 1, "unknown_site": 1, "invalid": 1, "malformed": 1, "bot": 0, "error": 0,
+	} {
+		if got.Outcomes[outcome] != want {
+			t.Errorf("%s = %d, want %d (all: %v)", outcome, got.Outcomes[outcome], want, got.Outcomes)
+		}
+	}
+	if got.Outcomes["rate_limited"] == 0 {
+		t.Errorf("rate_limited = 0, want the requests past the burst counted (all: %v)", got.Outcomes)
 	}
 }

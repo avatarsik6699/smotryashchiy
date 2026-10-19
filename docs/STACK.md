@@ -11,7 +11,7 @@
 
 | Layer | Technology |
 |-------|-----------|
-| Backend | Go 1.26.6 minimum (`go.mod`; earlier patches carry fixed stdlib CVEs), single binary with `server` / `agent` / `admin` modes |
+| Backend | Go 1.26.9 minimum (`go.mod`; earlier patches carry fixed stdlib CVEs), single binary with `server` / `agent` / `admin` modes |
 | Database | SQLite via `modernc.org/sqlite` (pure Go, WAL, single writer), embedded forward-only migrations |
 | Realtime | `github.com/coder/websocket` (server-to-client stream at `/api/stream`) |
 | Transport | `golang.zx2c4.com/wireguard` (userspace WireGuard + gVisor netstack; pure Go, no root, no kernel module) |
@@ -22,7 +22,7 @@
 ## Setup
 
 ```bash
-go version                 # >= 1.26.6 (go.mod triggers an automatic toolchain download if older)
+go version                 # >= 1.26.9 (go.mod triggers an automatic toolchain download if older)
 cp .env.example .env       # optional; every variable has a development default
 go run ./cmd/smotryashchiy admin host create --name vps-1   # prints the one-time agent enroll command
 go run ./cmd/smotryashchiy agent run --config agent.json --interval 10s   # after `agent enroll`; Linux only

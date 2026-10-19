@@ -5,6 +5,20 @@
   var site = s.getAttribute("data-site");
   if (!site) return;
   var origin = s.src.replace(/\/track\.js.*$/, "");
+  // Paths the site never wants counted, such as account pages reached by in-app navigation
+  // (docs/SPEC.md §4i, Change 26): a listed path itself or anything under it.
+  var exclude = (s.getAttribute("data-exclude") || "")
+    .split(",")
+    .map(function (p) {
+      return p.trim().replace(/\/+$/, "");
+    })
+    .filter(Boolean);
+  function excluded(path) {
+    for (var i = 0; i < exclude.length; i++) {
+      if (path === exclude[i] || path.indexOf(exclude[i] + "/") === 0) return true;
+    }
+    return false;
+  }
   var last = null;
   function send() {
     // A pageview is a pathname change, not a history call: routers call replaceState with the same
@@ -15,17 +29,23 @@
     if (url === last) return;
     var referrer = last === null ? document.referrer : "";
     last = url;
+    // An excluded page still becomes `last`, so returning to a public page counts again.
+    if (excluded(url)) return;
     // Only what the server stores (docs/SPEC.md §4i): no title, screen or language.
     var payload = JSON.stringify({ site: site, url: url, referrer: referrer });
+    // sendBeacon returns false when the browser refuses to queue the data (size or quota):
+    // the pageview then goes by fetch instead of being lost (Change 26, audit A1).
     try {
-      if (navigator.sendBeacon) {
+      if (
+        navigator.sendBeacon &&
         navigator.sendBeacon(
           origin + "/api/collect",
           new Blob([payload], { type: "text/plain" }),
-        );
+        )
+      )
         return;
-      }
     } catch (e) {}
+    if (typeof fetch !== "function") return;
     fetch(origin + "/api/collect", {
       method: "POST",
       body: payload,

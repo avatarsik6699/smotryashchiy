@@ -63,6 +63,11 @@ against database corruption, not host loss).
   before lowering retention.
 - **Agents**: the dashboard's host rows show `STALE`/`OFFLINE` in text when an agent stops reporting;
   it never silently reads as healthy.
+- **Analytics delivery** (Change 26): while signed in, `GET /api/collect/stats` returns collect
+  outcomes since the server started (`stored`, `rate_limited`, `malformed`, `invalid`, `bot`,
+  `unknown_site`, `origin_mismatch`, `error`). A site that stops counting after a domain move shows
+  growing `origin_mismatch`; storage failures show as `error` with an `analytics collect failed`
+  log line (no IP or User-Agent). Counters reset on restart.
 
 ## Failure playbooks
 

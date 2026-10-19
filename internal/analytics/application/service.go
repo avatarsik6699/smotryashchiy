@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/avatarsik6699/smotryashchiy/internal/analytics/domain"
@@ -35,16 +36,51 @@ type Options struct {
 	Retention time.Duration
 }
 
+// Collect outcomes counted since the server started (docs/SPEC.md §4i, Change 26): the public
+// endpoint always answers 204, so these are the only place a drop or a storage error shows.
+const (
+	OutcomeStored         = "stored"
+	OutcomeRateLimited    = "rate_limited"
+	OutcomeMalformed      = "malformed"
+	OutcomeInvalid        = "invalid"
+	OutcomeBot            = "bot"
+	OutcomeUnknownSite    = "unknown_site"
+	OutcomeOriginMismatch = "origin_mismatch"
+	OutcomeError          = "error"
+)
+
 // Service manages sites and turns beacons into stored pageviews.
 type Service struct {
 	repo Repository
 	now  func() time.Time
 	opts Options
+
+	countsMu sync.Mutex
+	counts   map[string]int64
 }
 
 // NewService wires the service.
 func NewService(repo Repository, now func() time.Time, opts Options) *Service {
-	return &Service{repo: repo, now: now, opts: opts}
+	return &Service{repo: repo, now: now, opts: opts, counts: map[string]int64{}}
+}
+
+// CountCollect records one collect outcome.
+func (s *Service) CountCollect(outcome string) {
+	s.countsMu.Lock()
+	s.counts[outcome]++
+	s.countsMu.Unlock()
+}
+
+// CollectCounts returns every outcome since start, zero for outcomes not seen yet.
+func (s *Service) CollectCounts() map[string]int64 {
+	s.countsMu.Lock()
+	defer s.countsMu.Unlock()
+	out := map[string]int64{}
+	for _, o := range []string{OutcomeStored, OutcomeRateLimited, OutcomeMalformed, OutcomeInvalid,
+		OutcomeBot, OutcomeUnknownSite, OutcomeOriginMismatch, OutcomeError} {
+		out[o] = s.counts[o]
+	}
+	return out
 }
 
 // CreateSite validates and stores a site.
@@ -91,23 +127,32 @@ func (s *Service) Stats(ctx context.Context, siteID, rng string) (domain.Stats, 
 // originHost is the request Origin's hostname; a beacon from any other origin (the site's own
 // localhost/CI/Lighthouse runs, a missing Origin) is dropped.
 func (s *Service) Collect(ctx context.Context, b domain.Beacon, clientIP, userAgent, originHost string) (bool, error) {
+	stored, outcome, err := s.collect(ctx, b, clientIP, userAgent, originHost)
+	s.CountCollect(outcome)
+	return stored, err
+}
+
+func (s *Service) collect(ctx context.Context, b domain.Beacon, clientIP, userAgent, originHost string) (bool, string, error) {
 	b, ok := b.Normalize()
 	if !ok {
-		return false, nil
+		return false, OutcomeInvalid, nil
 	}
 	if isBotUA(userAgent) {
-		return false, nil
+		return false, OutcomeBot, nil
 	}
 	site, found, err := s.repo.SiteExists(ctx, b.Site)
 	if err != nil {
-		return false, err
+		return false, OutcomeError, err
 	}
-	if !found || !OriginMatchesSite(originHost, site.Domain) {
-		return false, nil
+	if !found {
+		return false, OutcomeUnknownSite, nil
+	}
+	if !OriginMatchesSite(originHost, site.Domain) {
+		return false, OutcomeOriginMismatch, nil
 	}
 	hash, err := s.visitorHash(ctx, site.ID, clientIP, userAgent)
 	if err != nil {
-		return false, err
+		return false, OutcomeError, err
 	}
 	browser, os, device := parseUserAgent(userAgent)
 	err = s.repo.InsertPageview(ctx, domain.Pageview{
@@ -120,7 +165,10 @@ func (s *Service) Collect(ctx context.Context, b domain.Beacon, clientIP, userAg
 		OS:             os,
 		Device:         device,
 	})
-	return err == nil, err
+	if err != nil {
+		return false, OutcomeError, err
+	}
+	return true, OutcomeStored, nil
 }
 
 // OriginMatchesSite reports whether an Origin hostname is the site's domain or www. plus it,

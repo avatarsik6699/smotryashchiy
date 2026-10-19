@@ -133,3 +133,96 @@ func TestTrackJSCountsPathChangesNotHistoryCalls(t *testing.T) {
 		}
 	}
 }
+
+// deliveryHarness runs the snippet with a configurable sendBeacon (argv[3]: "true", "false",
+// "throw" or "absent") and data-exclude (argv[4]), and prints every delivery as
+// "<channel> <url>" in order.
+const deliveryHarness = `
+const vm = require("vm");
+const fs = require("fs");
+const [code, beacon, exclude] = [fs.readFileSync(process.argv[2], "utf8"), process.argv[3], process.argv[4]];
+const sent = [];
+const loc = { pathname: "/", search: "", hash: "" };
+const history = { pushState(s, t, u) { loc.pathname = u; }, replaceState(s, t, u) { if (u) loc.pathname = u; } };
+const listeners = {};
+const navigator = {};
+if (beacon !== "absent") navigator.sendBeacon = (url, blob) => {
+  if (beacon === "throw") throw new Error("refused");
+  sent.push({ via: "beacon", blob });
+  return beacon === "true";
+};
+const ctx = vm.createContext({
+  document: { currentScript: { src: "https://collector.test/track.js",
+    getAttribute: (n) => (n === "data-site" ? "site-1" : n === "data-exclude" ? exclude : null) }, referrer: "" },
+  location: loc, history, navigator, Blob, JSON,
+  window: { addEventListener: (ev, fn) => { (listeners[ev] = listeners[ev] || []).push(fn); } },
+  fetch: (url, init) => { sent.push({ via: "fetch", body: init.body }); return Promise.resolve(); },
+});
+vm.runInContext(code, ctx);
+ctx.history.pushState(null, "", "/account");
+ctx.history.pushState(null, "", "/account/settings");
+ctx.history.pushState(null, "", "/accounting");
+ctx.history.pushState(null, "", "/sign-in");
+ctx.history.pushState(null, "", "/ege");
+(async () => {
+  const out = [];
+  for (const s of sent) out.push(s.via + " " + JSON.parse(s.body ?? (await s.blob.text())).url);
+  process.stdout.write(JSON.stringify(out));
+})().catch((e) => { console.error(e); process.exit(1); });
+`
+
+// Change 26: excluded paths are never sent, a public page after them counts again, and a refused
+// or failing sendBeacon falls back to fetch exactly once (docs/SPEC.md §4i).
+func TestTrackJSExcludesPathsAndFallsBackToFetch(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node not installed: the tracking snippet's behavior test needs a JS runtime")
+	}
+	mux := http.NewServeMux()
+	NewTrackHandlers().Register(mux)
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	resp, err := http.Get(srv.URL + "/track.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	served, err := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	snippet := filepath.Join(dir, "track.js")
+	harness := filepath.Join(dir, "harness.js")
+	if err := os.WriteFile(snippet, served, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(harness, []byte(deliveryHarness), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	paths := []string{"/", "/accounting", "/ege"}
+	for beacon, channel := range map[string]string{"true": "beacon", "false": "fetch", "throw": "fetch", "absent": "fetch"} {
+		out, err := exec.Command(node, harness, snippet, beacon, " /account/ , /sign-in").Output()
+		if err != nil {
+			var stderr []byte
+			if ee, ok := err.(*exec.ExitError); ok {
+				stderr = ee.Stderr
+			}
+			t.Fatalf("%s: harness failed: %v\n%s", beacon, err, stderr)
+		}
+		var got []string
+		if err := json.Unmarshal(out, &got); err != nil {
+			t.Fatalf("%s: harness output %q: %v", beacon, out, err)
+		}
+		var want []string
+		for _, p := range paths {
+			if beacon == "false" {
+				want = append(want, "beacon "+p)
+			}
+			want = append(want, channel+" "+p)
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("sendBeacon %s: delivered %q, want %q", beacon, got, want)
+		}
+	}
+}

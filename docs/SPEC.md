@@ -532,6 +532,16 @@ Change 19, since the query string is no longer sent or stored and a query-only c
 the same path). Client routers call
 `replaceState` with the same URL on hydration and for scroll/state bookkeeping — found live on a
 TanStack Router site, where every load counted twice. A hash-only change is not a pageview either.
+**Excluded paths and delivery (Change 26).** `data-exclude="/account,/sign-in"` on the script tag lists
+paths the tracked site never wants counted: a listed path and everything under it is not sent, but
+still counts as the last path, so returning to a public page is a new pageview. This covers in-app
+navigation from a public page to a private one, which the site cannot stop once the snippet has
+patched `history`. The snippet uses `sendBeacon` and falls back to `fetch(..., {keepalive: true})`
+when `sendBeacon` is missing, throws or returns `false` (the browser refused to queue the data).
+Collect counts every outcome in memory — `stored`, `rate_limited`, `malformed`, `invalid`, `bot`,
+`unknown_site`, `origin_mismatch`, `error` — readable by an operator at `GET /api/collect/stats`
+(session required, `{"outcomes":{...}}`, reset on restart); a storage error is also logged without
+IP or User-Agent. The public answer stays `204` for every outcome.
 
 **Storage.** `sites (id, name, domain, created_at)`. `pageviews (id, site_id, ts, path,
 referrer_domain, visitor_hash, browser, os, device)`, raw TTL shared with §4.5

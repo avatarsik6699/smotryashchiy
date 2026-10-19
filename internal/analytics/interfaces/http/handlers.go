@@ -27,6 +27,12 @@ func (h *Handlers) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/sites", h.create)
 	mux.HandleFunc("DELETE /api/sites/{id}", h.remove)
 	mux.HandleFunc("GET /api/sites/{id}/stats", h.stats)
+	mux.HandleFunc("GET /api/collect/stats", h.collectStats)
+}
+
+// collectStats reports collect outcomes since the server started (Change 26).
+func (h *Handlers) collectStats(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"outcomes": h.service.CollectCounts()})
 }
 
 func (h *Handlers) list(w http.ResponseWriter, r *http.Request) {

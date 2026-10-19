@@ -2,6 +2,7 @@ package http
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/netip"
@@ -51,16 +52,21 @@ func (h *CollectHandlers) collect(w http.ResponseWriter, r *http.Request) {
 	ip := h.clientIP(r)
 	// The limit comes first: a limited request must cost no database work (docs/SPEC.md §4i).
 	if !h.limiter.Allow(ratelimit.ClientKey(ip)) {
+		h.service.CountCollect(application.OutcomeRateLimited)
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 	h.setCORS(w, r)
 	var b domain.Beacon
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxCollectBody)).Decode(&b); err != nil {
+		h.service.CountCollect(application.OutcomeMalformed)
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	_, _ = h.service.Collect(r.Context(), b, ip, r.UserAgent(), originHostname(r))
+	if _, err := h.service.Collect(r.Context(), b, ip, r.UserAgent(), originHostname(r)); err != nil {
+		// The visitor's IP and User-Agent never reach the log (docs/SPEC.md §4i).
+		slog.Error("analytics collect failed", "err", err)
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 

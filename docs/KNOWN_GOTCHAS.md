@@ -387,3 +387,21 @@ Carry these into the first contract tests instead of rediscovering them in produ
   log envelopes; unknown formats retain the stream fallback. Upgrade the agent on the source host
   to apply that classification. Historical stored events are unchanged, and real `ERROR`/`FATAL`
   records are now errors rather than warnings. Keep structured levels in new container log formats.
+
+### `restic backup --stdin` stores a snapshot even when the producer failed
+
+- **Symptoms**: with `--keep-last 2`, one failed nightly backup pushed a good copy out of the
+  repository, and the next restore drill restored an empty or truncated bundle.
+- **Root cause**: Restic saves whatever arrived on stdin, including an empty stream. `pipefail`
+  reports the producer's failure, but the snapshot already exists.
+- **Fix**: `deploy/backup/smotryashchiy-backup.sh` reads `PIPESTATUS`. When `admin backup` failed it
+  forgets the snapshot Restic just reported (`--json` summary `snapshot_id`) before returning the
+  failure (Change 29).
+
+### `set -e` does nothing inside a function called with `||`
+
+- **Symptoms**: a failed step inside a backup mode did not stop the mode; later steps (prune) ran.
+- **Root cause**: bash ignores errexit for every command executed within `f || status=$?`, even if
+  `set -e` is set again inside `f`.
+- **Fix**: mode functions end each step with `|| return`. Tests assert failures with explicit
+  `if …; then exit 1; fi`: a bare `! cmd` never trips errexit either (shellcheck SC2251).

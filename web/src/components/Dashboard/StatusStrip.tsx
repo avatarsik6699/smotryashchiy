@@ -37,7 +37,14 @@ export interface ProbeSummary {
 }
 
 /** Probes with no verdict (NEW, STALE) are counted in neither number: unknown stays unknown. */
-export function StatusStrip({ entries, probes }: { entries: HostEntry[]; probes: ProbeSummary | null }) {
+/** Hosts whose backups assess as normal, out of those that report a backup summary (Change 29). */
+export interface BackupCount {
+  ok: number
+  total: number
+  level: Level
+}
+
+export function StatusStrip({ entries, probes, backups = null }: { entries: HostEntry[]; probes: ProbeSummary | null; backups?: BackupCount | null }) {
   const s = summarizeHosts(entries)
   // A count that is above zero for a bad state is itself the finding (Change 22 assessment).
   const flag = (n: number, level: Level): Level | undefined => (n > 0 ? level : undefined)
@@ -50,6 +57,9 @@ export function StatusStrip({ entries, probes }: { entries: HostEntry[]; probes:
     ['avg cpu', s.cpu === null ? UNKNOWN : formatPercent(s.cpu)],
     ['avg mem', s.memory === null ? UNKNOWN : formatPercent(s.memory)],
     ...(probes === null ? [] : ([['probes up', String(probes.up)], ['probes down', String(probes.down), flag(probes.down, 'problem')]] as [string, string, Level?][])),
+    ...(backups === null
+      ? []
+      : ([['backups ok', `${backups.ok}/${backups.total}`, backups.level === 'watch' || backups.level === 'problem' ? backups.level : undefined]] as [string, string, Level?][])),
   ]
   return (
     <section className={shared.section} aria-labelledby="status-title">

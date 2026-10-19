@@ -6,6 +6,12 @@ import type {
   UptimeTargetDTO,
 } from "../domain/types";
 import { fleetSummary, hostHealth } from "./health";
+import { hostBackup } from "../domain/backup";
+import {
+  BACKUP_NOW,
+  sampleBackupDocument,
+  sampleBackupSummary,
+} from "../domain/backup.fixture";
 import {
   buildRecords,
   buildTargets,
@@ -134,6 +140,26 @@ describe("hostHealth", () => {
 });
 
 describe("fleetSummary", () => {
+  it("names backup findings and counts the hosts whose backups are ok (Change 29)", () => {
+    const s = state([host("a", "prod")], healthy("a"), []);
+    const ok = hostBackup(sampleBackupDocument(), BACKUP_NOW);
+    const stale = hostBackup(
+      sampleBackupDocument(
+        sampleBackupSummary({ generated_at: "2026-10-19T08:00:00Z" }),
+        "monitor",
+      ),
+      BACKUP_NOW,
+    );
+    const sum = fleetSummary(s, NOW, [ok, stale]);
+    expect(sum.level).toBe("problem");
+    expect(sum.issues[0]).toEqual({
+      level: "problem",
+      text: "summary written 4h ago (problem > 2h: the host's backup job or agent stopped) on monitor",
+    });
+    expect(sum.facts).toContain("backups ok on 1/2 hosts");
+    expect(fleetSummary(s, NOW).facts.some((f) => f.startsWith("backups"))).toBe(false);
+  });
+
   it("says all good with the facts behind it", () => {
     const s = state(
       [host("a", "prod"), host("b", "monitor")],

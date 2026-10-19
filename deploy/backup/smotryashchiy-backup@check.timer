@@ -1,0 +1,10 @@
+[Unit]
+Description=smotryashchiy off-host backup: check (weekly)
+
+[Timer]
+OnCalendar=Sun *-*-* 04:40:00 UTC
+RandomizedDelaySec=30m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

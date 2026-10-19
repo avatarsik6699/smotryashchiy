@@ -34,19 +34,55 @@ server terminate HTTPS itself than run a separate proxy.
 
 ## Backup schedule
 
-Automate the manual backup command from `docs/DEPLOY.md` with cron on the Docker host (adjust the
-compose file path):
+The off-host recipe in `deploy/backup/` (docs/SPEC.md §4f, Change 29) streams a consistent bundle from the
+running server straight into an encrypted [Restic](https://restic.net) repository, so nothing is kept on this
+host. Any Restic backend works; the reference deployment uses S3-compatible storage. It keeps the **last two**
+snapshots: monitoring data is not critical, and two copies cover one broken backup. A backup whose
+`admin backup` fails leaves no snapshot behind, so it can never push a good copy out.
 
-```cron
-# /etc/cron.d/smotryashchiy-backup — daily at 03:17, keep 14 days
-17 3 * * * root umask 077; docker compose -f /opt/smotryashchiy/docker-compose.yml exec -T server \
-  /smotryashchiy admin backup --out - > /var/backups/smotryashchiy/backup-$(date +\%F).tar.gz \
-  && find /var/backups/smotryashchiy -name 'backup-*.tar.gz' -mtime +14 -delete
+| Mode | Timer | What it does |
+|---|---|---|
+| `backup` | daily 03:17 UTC | `admin backup --out -` → `restic backup --stdin`, then `forget --keep-last 2 --prune` |
+| `check` | weekly, Sunday | `restic check --read-data-subset=10%` |
+| `drill` | monthly, 1st | `restic dump` the latest bundle → `admin restore` into a throwaway volume (hash, `integrity_check`, schema), volume removed |
+| `summary` | hourly | rewrites the backup summary only |
+
+Install on the Docker host (needs `docker`, `jq`; Restic runs from the pinned `restic/restic` image):
+
+```bash
+install -m 755 deploy/backup/smotryashchiy-backup.sh /usr/local/sbin/smotryashchiy-backup
+install -m 644 deploy/backup/smotryashchiy-backup@.service deploy/backup/smotryashchiy-backup@*.timer /etc/systemd/system/
+install -d -m 700 /etc/smotryashchiy
+# /etc/smotryashchiy/backup.env — root:root, mode 600 (the script refuses anything else):
+#   RESTIC_REPOSITORY=s3:https://<endpoint>/<bucket>
+#   RESTIC_PASSWORD=<repository password, also kept off this host>
+#   AWS_ACCESS_KEY_ID=… AWS_SECRET_ACCESS_KEY=… AWS_DEFAULT_REGION=…
+#   COMPOSE_FILE=/opt/smotryashchiy/docker-compose.yml
+#   SERVICE=server            # optional, the compose service name
+systemctl daemon-reload
+systemctl start smotryashchiy-backup@backup.service smotryashchiy-backup@drill.service
+systemctl enable --now smotryashchiy-backup@{backup,check,drill,summary}.timer
 ```
 
-The bundle holds secrets (the admin password hash and the WireGuard server key): `/var/backups` should
-be readable only by root, and copied off this host to be a real backup (this cron job alone protects
-against database corruption, not host loss).
+Write the env file without echoing secrets (for example from a secret store over `ssh … 'install -m 600
+/dev/stdin /etc/smotryashchiy/backup.env'`). **Keep the Restic password somewhere other than this host**:
+without it the remote copies cannot be read.
+
+Every mode writes `/var/lib/smotryashchiy/backup.json` in the `smotryashchiy.backup/1` schema. Start this host's
+agent with `--document backup=/var/lib/smotryashchiy/backup.json` and the BACKUPS ledger shows its jobs,
+snapshot count, repository size, disk and failed units; a failed mode also fails its systemd unit.
+
+**Restore on a fresh host** (the old one is lost): install Docker and the compose file, write the same env file,
+then
+
+```bash
+docker run --rm --env-file /etc/smotryashchiy/backup.env restic/restic:0.16.4 \
+  dump --tag smotryashchiy latest /smotryashchiy-backup.tar.gz |
+  docker compose run --rm -T server admin restore --from - --force
+docker compose up -d
+```
+
+Agents reconnect on their own: the WireGuard server key is part of the bundle. Point DNS at the new host first.
 
 ## Routine checks
 

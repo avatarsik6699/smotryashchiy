@@ -77,7 +77,9 @@ WireGuard server key. A backup is a consistent snapshot of a **running** server,
 
 The bundle is a `.tar.gz` (`manifest.json` + `smotryashchiy.db`). **It contains secrets**: keep it private and
 copy it off the host yourself (nothing leaves the machine automatically). Streaming through stdout avoids
-file-permission problems between your user and the container's uid `65532`.
+file-permission problems between your user and the container's uid `65532`. For a scheduled, encrypted copy
+in remote storage with a weekly check and a monthly restore drill, use the off-host recipe in
+`docs/RUNBOOK.md` § Backup schedule (`deploy/backup/`).
 
 To restore, stop the server, then stream the bundle into the volume:
 

@@ -13,13 +13,17 @@ import { AddSiteDialog } from '../Analytics/AddSiteDialog'
 import { AnalyticsView } from '../Analytics/AnalyticsView'
 import { SalesView } from '../Sales/SalesView'
 import { useSales } from '../../data/useSales'
+import { useBackups } from '../../data/useBackups'
+import { hostBackup } from '../../domain/backup'
+import { worst } from '../../domain/health'
+import { BackupsSection } from './BackupsSection'
 import { AddHostDialog } from './AddHostDialog'
 import { AddTargetDialog } from './AddTargetDialog'
 import { CommandBar, type View } from './CommandBar'
 import { EventsSection } from './EventsSection'
 import { HostsSection } from './HostsSection'
 import { UptimeSection } from './UptimeSection'
-import { StatusStrip, type HostEntry } from './StatusStrip'
+import { StatusStrip, type BackupCount, type HostEntry } from './StatusStrip'
 import { SummaryLine } from './SummaryLine'
 import { GuideNavContext } from '../Guide/GuideNav'
 import styles from './Dashboard.module.css'
@@ -85,6 +89,7 @@ function DashboardView({ onLogout }: { onLogout: () => Promise<void> }) {
   const [addingTarget, setAddingTarget] = useState(false)
   const [addingSite, setAddingSite] = useState(false)
   const sites = useSites()
+  const backupDocs = useBackups()
 
   const entries: HostEntry[] = useMemo(
     () =>
@@ -103,7 +108,15 @@ function DashboardView({ onLogout }: { onLogout: () => Promise<void> }) {
     }
   }, [state.targets, now])
   const hostNames = useMemo(() => new Map(state.hosts.map((h) => [h.host.id, h.host.name])), [state.hosts])
-  const summary = useMemo(() => fleetSummary(state, now), [state, now])
+  const backups = useMemo(() => backupDocs.documents.map((d) => hostBackup(d, now)), [backupDocs.documents, now])
+  const backupCount: BackupCount | null = useMemo(
+    () =>
+      backups.length === 0
+        ? null
+        : { ok: backups.filter((b) => b.overall === 'normal').length, total: backups.length, level: worst(backups.map((b) => b.overall)) },
+    [backups],
+  )
+  const summary = useMemo(() => fleetSummary(state, now, backups), [state, now, backups])
 
   return (
     <GuideNavContext.Provider value={openLesson}>
@@ -148,9 +161,10 @@ function DashboardView({ onLogout }: { onLogout: () => Promise<void> }) {
                   </p>
                 )}
                 <SummaryLine summary={summary} />
-                <StatusStrip entries={entries} probes={probes} />
+                <StatusStrip entries={entries} probes={probes} backups={backupCount} />
                 <HostsSection entries={entries} records={state.hosts} now={now} onAddHost={() => setAdding(true)} />
                 <UptimeSection targets={state.targets} now={now} onAdd={() => setAddingTarget(true)} />
+                <BackupsSection status={backupDocs.status} error={backupDocs.error} hosts={backups} now={now} onRetry={backupDocs.reload} />
                 <EventsSection events={state.events} hostNames={hostNames} />
               </>
             )}
@@ -167,7 +181,7 @@ function DashboardView({ onLogout }: { onLogout: () => Promise<void> }) {
               </p>
             }
           >
-            <GuideView lesson={lesson} onLessonChange={setLesson} sites={sites.sites} />
+            <GuideView lesson={lesson} onLessonChange={setLesson} sites={sites.sites} backups={backups} />
           </Suspense>
         )}
       </main>

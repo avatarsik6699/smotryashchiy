@@ -1,0 +1,10 @@
+[Unit]
+Description=smotryashchiy off-host backup: summary (hourly)
+
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=5m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -2,7 +2,8 @@ import { Button } from "@base-ui/react/button";
 import { Fragment, useEffect, useRef } from "react";
 import { useDashboard } from "../../data/DashboardContext";
 import { useSiteStats } from "../../data/useSiteStats";
-import { UNKNOWN } from "../../domain/format";
+import { primaryJob, type HostBackup } from "../../domain/backup";
+import { formatAge, UNKNOWN } from "../../domain/format";
 import type { SiteDTO } from "../../domain/types";
 import { liveCallouts, type Callout } from "../../guide/live";
 import { LESSONS, LESSON_BY_ID, type LessonId } from "../../guide/lessons";
@@ -15,6 +16,24 @@ interface GuideViewProps {
   lesson: LessonId;
   onLessonChange: (lesson: LessonId) => void;
   sites: SiteDTO[];
+  /** Hosts that report a backup summary (Change 29): the backups lesson's live values. */
+  backups?: HostBackup[];
+}
+
+/** One line per host for the backups lesson, judged by the same rules as the BACKUPS ledger. */
+function backupCallouts(backups: HostBackup[], now: number): Callout[] {
+  return backups.map((b) => {
+    const primary = primaryJob(b);
+    const done = primary?.job.completed_at ?? null;
+    const text =
+      b.issues[0]?.reason ??
+      (b.summary === null
+        ? b.summaryAge.reason
+        : primary === null || done === null
+          ? "no backup job reported"
+          : `all jobs ok, ${primary.job.label} ${formatAge(now - Date.parse(done))}`);
+    return { subject: b.hostName, text, level: b.overall };
+  });
 }
 
 /** Renders `code` spans written with backticks in lesson text; everything else stays plain text. */
@@ -66,7 +85,7 @@ function SiteToday({ site }: { site: SiteDTO }) {
  * The guide (docs/SPEC.md §5, Change 22): a step-by-step course on reading the dashboard, one lesson
  * at a time, each next to the live values of the operator's own hosts.
  */
-export function GuideView({ lesson, onLessonChange, sites }: GuideViewProps) {
+export function GuideView({ lesson, onLessonChange, sites, backups = [] }: GuideViewProps) {
   const state = useDashboard();
   const now = useNow(5000);
   const heading = useRef<HTMLHeadingElement>(null);
@@ -74,7 +93,10 @@ export function GuideView({ lesson, onLessonChange, sites }: GuideViewProps) {
   const l = LESSON_BY_ID[lesson];
   const prev = LESSONS[index - 1];
   const next = LESSONS[index + 1];
-  const live = liveCallouts(lesson, state, now);
+  const live = [
+    ...liveCallouts(lesson, state, now),
+    ...(lesson === "backups" ? backupCallouts(backups, now) : []),
+  ];
   const firstRender = useRef(true);
 
   useEffect(() => {

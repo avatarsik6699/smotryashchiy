@@ -17,6 +17,7 @@ export type LessonId =
   | "checks"
   | "events"
   | "uptime"
+  | "backups"
   | "analytics"
   | "triage";
 
@@ -322,6 +323,33 @@ export const LESSONS: Lesson[] = [
       "TLS low: on the server, `certbot certificates` and `systemctl list-timers | grep certbot`.",
     ],
     thresholds: `problem: DOWN or TLS ≤ ${t.tlsDays.problem} days; watch: latency ≥ ${t.latencyMs.watch / 1000} s, TLS ≤ ${t.tlsDays.watch} days, or no recent result`,
+  },
+  {
+    id: "backups",
+    title: "Backups: will a restore work?",
+    summary:
+      "A host that runs backups reports a summary: when each backup job last succeeded, how many copies its repositories keep, protected snapshots, free space on the backup disk and failed backup units.",
+    body: [
+      "A backup you have never restored is only a hope. That is why a summary lists more than the nightly copy: an off-site copy that survives the loss of the whole server, an integrity check of that copy, and a restore drill that actually brings the data back on a throwaway database.",
+      "Each job carries its own limit: a daily backup should be younger than 36 hours, a weekly check younger than 8 days, a monthly drill younger than 35 days. Older than its limit, failed or never completed is a problem; a job that is not set up yet (for example the off-site copy before its storage exists) is watch.",
+      "A hold is a snapshot kept on purpose, such as the copy taken right before a database migration. Retention never deletes it, so it needs a person: after its review date, check that the migration went well and release it.",
+      "The summary is written hourly and after every job. If it stops arriving for over 2 hours, the writer on that host or its agent has stopped, and nothing else in the row can be trusted.",
+    ],
+    normal: [
+      "OK, last success within the day, the same snapshot counts from day to day, plenty of free space.",
+    ],
+    worry: [
+      "Any job older than its limit, failed, or never completed.",
+      "Off-site copy not configured: a lost server would take its backups with it.",
+      "Snapshot counts dropping or a repository growing much faster than the data.",
+      "A hold past its review date.",
+    ],
+    act: [
+      "On the host: `systemctl --failed`, then `journalctl -u <unit> --since today` for the failed backup unit.",
+      "Run the job by hand once the cause is fixed and watch the row turn OK.",
+      "The tracked site's backup runbook (in its repository) covers off-site setup, holds and restores.",
+    ],
+    thresholds: `problem: a job failed, never completed or older than its own limit, a failed backup unit, free space < ${t.backupDiskFree.problem}%, or the summary older than ${t.backupSummaryHours} h; watch: a job not configured, a hold past its review date, free space < ${t.backupDiskFree.watch}%`,
   },
   {
     id: "analytics",

@@ -117,6 +117,10 @@ func (b Batch) Normalize(now time.Time) (Batch, error) {
 // documentKindRe names a document kind, such as "business" (Change 27).
 var documentKindRe = regexp.MustCompile(`^[a-z][a-z0-9_.]{0,63}$`)
 
+// ValidDocumentKind reports whether kind is an acceptable document kind, so the agent can refuse a
+// bad --document flag at start instead of having every batch rejected (Change 29).
+func ValidDocumentKind(kind string) bool { return documentKindRe.MatchString(kind) }
+
 func common(field, name string, ts time.Time, labels map[string]string, now time.Time) (time.Time, map[string]string, error) {
 	if !nameRe.MatchString(name) {
 		return time.Time{}, nil, invalid(field+".name", "must match %s", nameRe)

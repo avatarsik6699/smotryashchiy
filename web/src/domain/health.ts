@@ -39,6 +39,10 @@ export const THRESHOLDS = {
   latencyMs: { watch: 1500 },
   tlsDays: { watch: 14, problem: 7 },
   errorsPerHour: { watch: 1, problem: 10 },
+  /** Free space on a host's backup filesystem, percent; lower is worse (Change 29). */
+  backupDiskFree: { watch: 15, problem: 5 },
+  /** A backup summary older than this means the host's job or its agent stopped (Change 29). */
+  backupSummaryHours: 2,
 } as const;
 
 /** CPU is judged on the mean of the last five minutes, so a single busy tick does not color it. */

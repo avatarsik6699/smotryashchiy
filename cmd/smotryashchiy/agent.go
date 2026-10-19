@@ -11,13 +11,15 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"syscall"
 
 	"github.com/avatarsik6699/smotryashchiy/internal/agent"
 	"github.com/avatarsik6699/smotryashchiy/internal/agent/collect"
+	"github.com/avatarsik6699/smotryashchiy/internal/telemetry/domain"
 )
 
-const agentUsage = "usage: smotryashchiy agent enroll --server URL --secret S [--config PATH] | agent run [--config PATH] [--interval 10s] [--spool-dir DIR] [--business-file PATH] | agent push-file FILE [--config PATH] [--key KEY]"
+const agentUsage = "usage: smotryashchiy agent enroll --server URL --secret S [--config PATH] | agent run [--config PATH] [--interval 10s] [--spool-dir DIR] [--document KIND=PATH]... [--business-file PATH] | agent push-file FILE [--config PATH] [--key KEY]"
 
 const defaultAgentConfig = "agent.json"
 
@@ -89,7 +91,9 @@ func runAgentLoop(ctx context.Context, args []string) error {
 	path := fs.String("config", defaultAgentConfig, "agent config path")
 	interval := fs.Duration("interval", agent.DefaultInterval, "collection interval (5s..5m)")
 	spoolDir := fs.String("spool-dir", "", "offline buffer directory (default: <config dir>/spool)")
-	businessFile := fs.String("business-file", "", "JSON business summary to report when it changes (Change 27)")
+	businessFile := fs.String("business-file", "", "alias of --document business=PATH (Change 27)")
+	var documentFlags repeatedFlag
+	fs.Var(&documentFlags, "document", "KIND=PATH: report a JSON file as a document of that kind when it changes; repeatable (Change 29)")
 	if err := fs.Parse(args); err != nil || fs.NArg() != 0 {
 		return errors.New(agentUsage)
 	}
@@ -103,9 +107,9 @@ func runAgentLoop(ctx context.Context, args []string) error {
 	if *spoolDir == "" {
 		*spoolDir = filepath.Join(filepath.Dir(*path), "spool")
 	}
-	var documents []collect.DocumentCollector
-	if *businessFile != "" {
-		documents = append(documents, &collect.FileDocument{Kind: "business", Path: *businessFile})
+	documents, err := documentCollectors(documentFlags, *businessFile)
+	if err != nil {
+		return err
 	}
 	return agent.Run(ctx, agent.RunConfig{
 		DocumentCollectors: documents,
@@ -133,4 +137,36 @@ func runAgentLoop(ctx context.Context, args []string) error {
 		Dial: func(ctx context.Context) (agent.Uplink, error) { return agent.Dial(ctx, cfg) },
 		Log:  slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})),
 	})
+}
+
+// repeatedFlag collects every occurrence of a repeatable flag.
+type repeatedFlag []string
+
+func (r *repeatedFlag) String() string     { return strings.Join(*r, ",") }
+func (r *repeatedFlag) Set(v string) error { *r = append(*r, v); return nil }
+
+// documentCollectors turns --document KIND=PATH flags (and the --business-file alias) into file
+// document collectors. Kinds must be valid and unique, and a batch carries at most
+// domain.MaxDocuments of them, so a bad flag fails at start rather than in every batch.
+func documentCollectors(flags []string, businessFile string) ([]collect.DocumentCollector, error) {
+	if businessFile != "" {
+		flags = append(flags, "business="+businessFile)
+	}
+	if len(flags) > domain.MaxDocuments {
+		return nil, fmt.Errorf("agent run: at most %d --document flags, got %d", domain.MaxDocuments, len(flags))
+	}
+	seen := make(map[string]bool, len(flags))
+	out := make([]collect.DocumentCollector, 0, len(flags))
+	for _, f := range flags {
+		kind, path, ok := strings.Cut(f, "=")
+		if !ok || path == "" || !domain.ValidDocumentKind(kind) {
+			return nil, fmt.Errorf("agent run: --document %q must be KIND=PATH with KIND matching ^[a-z][a-z0-9_.]{0,63}$", f)
+		}
+		if seen[kind] {
+			return nil, fmt.Errorf("agent run: document kind %q is given twice", kind)
+		}
+		seen[kind] = true
+		out = append(out, &collect.FileDocument{Kind: kind, Path: path})
+	}
+	return out, nil
 }

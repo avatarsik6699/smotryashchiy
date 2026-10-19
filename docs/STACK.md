@@ -65,6 +65,7 @@ disables that collector for the run, it is never required to build or run the ag
 | Unit tests | `go test ./... -short` | |
 | Frontend typecheck | `npm --prefix web run typecheck` | only when `web/` changed |
 | Frontend tests | `npm --prefix web test` | only when `web/` changed; includes axe accessibility checks |
+| Backup recipe | `shellcheck deploy/backup/*.sh deploy/backup/tests/*.sh && bash deploy/backup/tests/smotryashchiy-backup.test.sh` | only when `deploy/backup/` changed; fake docker/restic, no network (Change 29) |
 | LSP diagnostics | `no — gopls not configured` | informational |
 
 ## Full Gate
@@ -79,6 +80,7 @@ disables that collector for the run, it is never required to build or run the ag
 | Frontend build | `npm --prefix web run build` | writes `web/dist`, which `go build` embeds |
 | Bundle budget | `bash scripts/bundle-budget.sh` | gzip JS <= 200 KB (`BUNDLE_BUDGET_KB` overrides) |
 | Backend tests | `go test ./...` | |
+| Backup recipe | `shellcheck deploy/backup/*.sh deploy/backup/tests/*.sh && bash deploy/backup/tests/smotryashchiy-backup.test.sh` | contract test of the off-host backup script (Change 29) |
 | Smoke | `go build ./...` | builds with the freshly built UI embedded |
 | Secrets scan (Gitleaks) | `bash scripts/secrets-gate.sh` | Pins Gitleaks v8.30.1; scans full git history and non-ignored working files |
 | Dependency audit | `bash scripts/vuln-gate.sh` | Pins govulncheck v1.8.0; fails on reachable vulnerabilities |

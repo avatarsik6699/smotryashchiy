@@ -1,0 +1,10 @@
+[Unit]
+Description=smotryashchiy off-host backup: drill (monthly)
+
+[Timer]
+OnCalendar=*-*-01 05:20:00 UTC
+RandomizedDelaySec=1h
+Persistent=true
+
+[Install]
+WantedBy=timers.target

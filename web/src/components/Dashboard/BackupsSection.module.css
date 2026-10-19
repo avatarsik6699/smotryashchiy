@@ -1,0 +1,229 @@
+/* BACKUPS (Change 29): the HOSTS ledger's row language — state, identity, measurements, age — with
+   an in-place panel of jobs and facts. Hairlines and tabular alignment, no cards. */
+
+.ledger {
+  min-width: 0;
+  border-top: 1px solid var(--hairline);
+}
+
+.item {
+  border-bottom: 1px solid var(--hairline);
+}
+
+.header {
+  margin: 0;
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+.trigger {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding: 14px 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 150ms ease-out;
+  /* state | identity | last success | snapshots | disk free | age */
+  grid-template-columns: 104px minmax(0, 1.8fr) minmax(0, 0.8fr) minmax(0, 1fr) minmax(0, 0.8fr) 120px;
+}
+
+.trigger:hover {
+  background: var(--raised);
+}
+
+.state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+}
+
+.chevron {
+  flex: none;
+  color: var(--text-muted);
+  transition: transform 150ms ease-out;
+}
+
+.trigger[data-panel-open] .chevron {
+  transform: rotate(90deg);
+}
+
+.pulse {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--status-unreachable);
+}
+
+.item[data-level='normal'] .pulse {
+  background: var(--status-ok);
+}
+
+.item[data-level='watch'] .pulse {
+  background: var(--status-warn);
+}
+
+.item[data-level='problem'] .pulse {
+  background: var(--status-critical);
+}
+
+.identity {
+  display: grid;
+  min-width: 0;
+}
+
+.name {
+  overflow: hidden;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reason {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.more {
+  color: var(--text-muted);
+}
+
+.measure {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.label {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.value {
+  overflow: hidden;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.age {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  text-align: right;
+}
+
+.panel {
+  overflow: hidden;
+  padding: 0 0 var(--space-4);
+}
+
+.details {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-3);
+}
+
+.scroll {
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+
+.table th,
+.table td {
+  padding: 6px var(--space-2) 6px 0;
+  border-bottom: 1px solid var(--hairline);
+  font-weight: 400;
+  text-align: left;
+}
+
+.table thead th {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.table .num {
+  text-align: right;
+}
+
+.facts {
+  display: grid;
+  margin: 0;
+  gap: var(--space-2) var(--space-4);
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  font-size: 0.875rem;
+}
+
+.fact {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.fact dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.hold {
+  display: block;
+}
+
+@media (max-width: 900px) {
+  .trigger {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas:
+      'state age'
+      'identity identity'
+      'last disk'
+      'snapshots snapshots';
+  }
+
+  .state {
+    grid-area: state;
+  }
+
+  .age {
+    grid-area: age;
+  }
+
+  .identity {
+    grid-area: identity;
+  }
+
+  .last {
+    grid-area: last;
+  }
+
+  .snapshots {
+    grid-area: snapshots;
+  }
+
+  .disk {
+    grid-area: disk;
+  }
+}

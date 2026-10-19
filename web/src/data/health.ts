@@ -15,6 +15,7 @@ import {
   type Level,
 } from "../domain/health";
 import { tlsDaysLeft, uptimeState } from "../domain/uptime";
+import type { HostBackup } from "../domain/backup";
 import {
   currentValue,
   errorsLastHour,
@@ -91,10 +92,14 @@ const HEADLINE: Record<Level, string> = {
   unknown: "No data yet",
 };
 
-/** One line for the top of Monitoring: the worst level first, then what it is based on. */
+/**
+ * One line for the top of Monitoring: the worst level first, then what it is based on. Backups
+ * (Change 29) join when any host reports a backup summary.
+ */
 export function fleetSummary(
   state: Pick<DashboardState, "status" | "hosts" | "targets" | "errors">,
   nowMs: number,
+  backups: HostBackup[] = [],
 ): Summary {
   const hosts = state.hosts.map((rec) => ({
     name: rec.host.name,
@@ -141,6 +146,10 @@ export function fleetSummary(
   }
   if (errors.level === "watch" || errors.level === "problem")
     found.push({ level: errors.level, text: errors.reason });
+  for (const b of backups) {
+    for (const issue of b.issues)
+      found.push({ level: issue.level, text: `${issue.reason} on ${b.hostName}` });
+  }
 
   const reporting = hosts.filter(
     (h) => h.health.freshness.level === "normal",
@@ -173,10 +182,16 @@ export function fleetSummary(
         : `${errorCount} error${errorCount === 1 ? "" : "s"} in the last hour`,
     );
 
+  if (backups.length > 0) {
+    const ok = backups.filter((b) => b.overall === "normal").length;
+    facts.push(`backups ok on ${ok}/${backups.length} host${backups.length === 1 ? "" : "s"}`);
+  }
+
   const known = [
     ...hosts.map((h) => h.health.overall),
     ...targets.map((t) => t.health.level),
     errors.level,
+    ...backups.map((b) => b.overall),
   ];
   const level =
     state.status !== "ready" || hosts.length + targets.length === 0

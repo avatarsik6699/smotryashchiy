@@ -7,7 +7,7 @@
 
 | Field | Value |
 |-------|-------|
-| Document Version | `v1.23` |
+| Document Version | `v1.24` |
 | Date | `2026-09-23` |
 | Architect / Owner | `avatarsik666@gmail.com` |
 | Stack | See [docs/STACK.md](./STACK.md) |
@@ -45,7 +45,7 @@ looks healthy; observe only.
 | Site visitor analytics: JS snippet, cookieless (Changes 14–15) | |
 | Log/event collection: journald, Docker logs | Second notification channel |
 | Security signals: fail2ban bans and jail status | Distributed / high-cardinality storage |
-| ~~Alert rules, firing → resolved lifecycle, Telegram~~ *(deferred, see §7)* | Off-host backup (later; local snapshot bundle in §4f) |
+| ~~Alert rules, firing → resolved lifecycle, Telegram~~ *(deferred, see §7)* | Off-host backup is an operator recipe, not a built-in service (§4f, Change 29) |
 | Embedded static web UI, single admin password | Escalation / repeat notifications |
 
 ---
@@ -122,8 +122,17 @@ Validation (rejects the whole batch with a field-addressed error; nothing is par
   the latest document per host and kind (a later batch replaces it; the host's deletion removes it)
   and serves them to a session at `GET /api/documents?kind=K` →
   `{"documents":[{host_id, host_name, kind, received_at, body}]}`. The agent's `run
-  --business-file PATH` reports a JSON file as kind `business` once at start and whenever its content
-  changes; a missing file is quiet, an invalid one is logged once.
+  --document KIND=PATH` (repeatable, ≤ 4, unique kinds; Change 29) reports each JSON file as that kind
+  once at start and whenever its content changes; a missing file is quiet, an invalid one is logged
+  once. `--business-file PATH` stays as an alias of `--document business=PATH`.
+- **Backup summary `smotryashchiy.backup/1` (Change 29).** A host that runs backups writes a JSON
+  object reported as kind `backup`: `schema`, `generated_at`, `jobs[]` (`name` `^[a-z][a-z0-9_.]{0,63}$`,
+  `label`, `status` `success|failed|not-configured`, `completed_at` or null, `max_age_hours`, optional
+  `duration_seconds`, optional `source`; the first job is the host's primary backup, which the ledger row shows), `repositories[]` (`name`, `snapshots`, `size_bytes`),
+  `holds[]` (`name`, `created_at`, `review_after_days`), `disk` (`path`, `free_bytes`, `total_bytes`)
+  and `failed_units[]` (unit names). Counts, sizes and times only: no paths of user data, snapshot
+  contents or secrets. The format is the product's own; the tracked site and the monitoring host
+  write the same schema.
 
 ### 4.2 Storage semantics
 
@@ -365,6 +374,14 @@ The server probes operator-defined **targets** itself; nothing runs on the monit
   `PRAGMA integrity_check` is `ok` and that the bundle's migration count is not newer than the binary's, then
   atomically replaces the database. It refuses to touch an existing non-empty database without `--force`, and
   refuses while the database is locked by a running server. Off-host copying stays the operator's job.
+- **Off-host backup recipe (Change 29).** `deploy/backup/` ships a host script and systemd
+  units for the Docker host: daily, `admin backup --out -` streams into an encrypted Restic repository
+  (pinned `restic/restic` image; any Restic backend, S3 in the reference deployment) with `forget
+  --keep-last 2 --prune`; nothing stays on the host. Weekly `restic check`, monthly a restore drill
+  that runs `admin restore` of the latest bundle into a throwaway volume (manifest hash and
+  `integrity_check`). Every job writes the `smotryashchiy.backup/1` summary the host's own agent
+  reports; a failed job fails its unit. Credentials and the Restic password live in one root-only
+  environment file.
 - **Release Gate** (STACK.md): image builds, runs as non-root, becomes `healthy`, serves `/`, keeps its data
   across a container restart, and passes a vulnerability scan with no fixable HIGH/CRITICAL findings.
 
@@ -595,7 +612,13 @@ below change:
   (per plan paid / orders, refunds, revenue with an inline bar, sign-ups, confirmed) with totals and
   all-time sign-up → payment. Days are the site's (Moscow). The view loads when opened and refreshes
   every five minutes; nothing streams it. A summary in another schema is not shown.
-- The guide is a step-by-step course on reading the dashboard, with 14 lessons from how data
+- **Backups (Change 29, architect decision 2026-10-19; no notifications).** The Monitoring view
+  gains a **BACKUPS** ledger between UPTIME and EVENTS: one row per host that reports a
+  `smotryashchiy.backup/1` document, with the worst assessment, each job's state and age, snapshot
+  counts and repository sizes, holds, backup-disk free space and failed units; a host row expands in
+  place to the full job list. Its worst level joins the summary line. Without any backup document the
+  ledger says how to start reporting one. A summary in another schema is shown as unknown.
+- The guide is a step-by-step course on reading the dashboard, with 15 lessons from how data
   flows to a triage checklist. Each lesson shows the live values of the operator's own hosts,
   judged by the same rules as the dashboard.
 - Every section and block title has a `?` button that opens a popover with a short explanation,
@@ -619,6 +642,11 @@ below change:
 | check status | `warn` | `critical`, `fail` |
 | uptime target | latency ≥ 1.5 s or TLS ≤ 14 d | `DOWN`, TLS ≤ 7 d or expired |
 | error events in the last hour (`/api/events?level=error`), routine SSH pre-auth rejections excluded (Change 23) | ≥ 1 | ≥ 10 |
+| backup job (Change 29) | `not-configured` | `failed`, or older than its `max_age_hours`, or never completed |
+| backup hold | older than its `review_after_days` | — |
+| backup disk free | < 15 % | < 5 % |
+| backup failed units | — | ≥ 1 |
+| backup summary age | — | > 2 h (the host's job or agent stopped) |
 
 Routine SSH pre-auth rejections (Change 23, architect decision 2026-09-23) do not count as
 errors. These are sshd lines from the `ssh`/`sshd` unit that end in `[preauth]`, e.g. `maximum
@@ -647,7 +675,7 @@ target, latency with a sparkline, TLS days, age); targets are added through a di
 inline confirmation, no separate page.
 
 Layout, top to bottom: command bar (`$ smotryashchiy`, live-connection text, `+ add host`, `logout`),
-**STATUS** strip (hosts and freshness counts, average CPU/memory), **HOSTS** ledger, **UPTIME** ledger (targets), **EVENTS** log.
+**STATUS** strip (hosts and freshness counts, average CPU/memory), **HOSTS** ledger, **UPTIME** ledger (targets), **BACKUPS** ledger (Change 29), **EVENTS** log.
 A host row shows name, freshness state, four sparklines with current values (CPU, memory, disk, network)
 and last-seen age; activating it expands the row in place (one open at a time) to large charts, disks per
 mount, network per interface, load, swap, checks and that host's events. The window is fixed at 1 hour;

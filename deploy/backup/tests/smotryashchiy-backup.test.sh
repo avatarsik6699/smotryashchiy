@@ -71,6 +71,11 @@ esac
 FAKE
 cat >"$root/bin/systemctl" <<'FAKE'
 #!/usr/bin/env bash
+# Like systemd 255: a unit pattern needs the list-units verb, or the call fails (Change 31).
+[[ ${1:-} == list-units && " $* " == *" --failed "* ]] || {
+  echo "Unknown command verb '${*: -1}'." >&2
+  exit 1
+}
 cat "$FAKE/failed-units" 2>/dev/null || true
 FAKE
 cat >"$root/bin/df" <<'FAKE'

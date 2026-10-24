@@ -97,7 +97,8 @@ write_summary() {
     fi
   }
   disk_line=$(df -B1 --output=target,avail,size /var/lib/docker | tail -1)
-  failed=$(systemctl --failed --plain --no-legend 'smotryashchiy-backup@*' 2>/dev/null | awk '{print $1}' | jq -R . | jq -s .)
+  # `list-units` is required: systemd 255 reads a bare `--failed PATTERN` as an unknown verb (Change 31).
+  failed=$(systemctl list-units --failed --plain --no-legend 'smotryashchiy-backup@*' 2>/dev/null | awk '{print $1}' | jq -R . | jq -s .)
   {
     job backup 'off-site backup' 36
     job check 'off-site check' 192

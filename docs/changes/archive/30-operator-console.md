@@ -143,7 +143,7 @@ See `docs/SPEC.md` §4j, §5 «Operator» and §6 and the Files list above.
 ## Gate Checks
 
 > Fast Gate runs per task in `/work`; Full Gate and (with `--release`) Release Gate run once in
-> `/ship`. Both are defined in [docs/STACK.md](../STACK.md) — this section only records
+> `/ship`. Both are defined in [docs/STACK.md](../../STACK.md) — this section only records
 > change-specific overrides.
 
 End to end on a dev pair:

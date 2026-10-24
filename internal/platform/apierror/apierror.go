@@ -21,6 +21,7 @@ const (
 	KindConflict
 	KindInvalid
 	KindUnauthorized
+	KindForbidden
 )
 
 // Error is the typed/sentinel error every domain package should use for expected failure modes.
@@ -35,6 +36,7 @@ func NotFound(message string) *Error     { return &Error{Kind: KindNotFound, Mes
 func Conflict(message string) *Error     { return &Error{Kind: KindConflict, Message: message} }
 func Invalid(message string) *Error      { return &Error{Kind: KindInvalid, Message: message} }
 func Unauthorized(message string) *Error { return &Error{Kind: KindUnauthorized, Message: message} }
+func Forbidden(message string) *Error    { return &Error{Kind: KindForbidden, Message: message} }
 
 func statusFor(kind Kind) int {
 	switch kind {
@@ -46,6 +48,8 @@ func statusFor(kind Kind) int {
 		return http.StatusBadRequest
 	case KindUnauthorized:
 		return http.StatusUnauthorized
+	case KindForbidden:
+		return http.StatusForbidden
 	default:
 		return http.StatusInternalServerError
 	}

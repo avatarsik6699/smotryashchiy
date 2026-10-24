@@ -7,8 +7,8 @@
 
 | Field | Value |
 |-------|-------|
-| Document Version | `v1.24` |
-| Date | `2026-09-23` |
+| Document Version | `v1.25` |
+| Date | `2026-10-24` |
 | Architect / Owner | `avatarsik666@gmail.com` |
 | Stack | See [docs/STACK.md](./STACK.md) |
 | Domain | Self-contained self-hosted monitoring for solo developers and small teams |
@@ -32,21 +32,22 @@ operator gets a working server and the first monitored host in under 5 minutes, 
 no third-party accounts, no external database, and no SSH credentials stored in the product.
 
 Principles: simplicity of install and upkeep over breadth; built-in over integrated; unknown never
-looks healthy; observe only.
+looks healthy; observe, and act only through the closed operator command set of §4j.
 
 ### 1.3 Boundaries
 
 | Included (MVP) | Excluded |
 |----------|----------|
-| Single Go binary: `server`, `agent`, `admin` modes | Remote actions, deployment, config mutation of targets |
+| Single Go binary: `server`, `agent`, `admin` modes | Arbitrary remote actions, deployment, config mutation of targets (the closed operator command set of §4j is the one exception, Change 30) |
 | Host metrics via own agent (CPU, RAM, swap, disk, network, load, uptime) | Adapters/plugins for third-party tools |
-| Docker container metrics via the local socket | Multi-user / RBAC / audit log |
+| Docker container metrics via the local socket | Multi-user / RBAC |
 | Built-in uptime checks: HTTP, TCP, TLS expiry | IP geolocation / country breakdown (fast-follow after Change 14/15) |
 | Site visitor analytics: JS snippet, cookieless (Changes 14–15) | |
 | Log/event collection: journald, Docker logs | Second notification channel |
 | Security signals: fail2ban bans and jail status | Distributed / high-cardinality storage |
 | ~~Alert rules, firing → resolved lifecycle, Telegram~~ *(deferred, see §7)* | Off-host backup is an operator recipe, not a built-in service (§4f, Change 29) |
 | Embedded static web UI, single admin password | Escalation / repeat notifications |
+| Operator console for one tracked site: queued allow-listed commands, audit log, incident log (§4j, Change 30) | |
 
 ---
 
@@ -592,6 +593,64 @@ rotates daily by design).
 same 60 s full-refresh cadence as the rest of the dashboard; richer charts (time-series, referrer/
 device breakdowns as bars) beyond the text ledgers in §5.
 
+## 4j. Operator console (Change 30, architect decision 2026-10-24)
+
+The product stays a monitor, but the operator of the tracked site (kodumka.ru) gets one place to see
+account-protection signals and to apply the site's manual measures instead of a CLI on its host. The
+set of actions is closed and owned by the host; the server can only ask.
+
+**Command channel (pull; the host keeps no open ports).**
+- Table `operator_commands (id TEXT PK, host_id → hosts ON DELETE CASCADE, kind, args_json, reason,
+  status queued|running|done|failed|expired, created_at, started_at, finished_at, result_json,
+  error)`. `kind` is one of `warn`, `suspend`, `terminate`, `lift`, `refund_execute`,
+  `account_show`; `args_json` follows a per-kind schema validated on queueing: `user` (UUID) or
+  `email` (≤ 320 bytes) for account kinds, `days` 1–30 for `suspend`, `compensate` boolean for
+  `lift`, `refund` (UUID) for `refund_execute`. `reason` (1–300 bytes, the text the student sees) is
+  required for `warn`, `suspend`, `terminate`.
+- `GET /agent/commands` on the **tunnel mux only** (§4b): the host comes from the WireGuard source
+  address; returns `{"commands":[{id, kind, args}]}` — at most 5 of that host's `queued` commands,
+  oldest first — and marks them `running` in the same transaction. `POST /agent/commands/{id}/result`
+  (body ≤ 80 KiB) with `{status: done|failed, result: object|null, error: string ≤ 2 KiB}` closes a
+  `running` command of that same host; anything else answers `404`.
+- A command `queued` for 10 minutes becomes `expired`; one `running` for 5 minutes without a result
+  becomes `failed` (`error: "no result"`). Results (`result_json`, `error`) are cleared after 30 days;
+  the row stays as history.
+- **Agent.** `agent run --operator-command PATH` enables polling every 15 s. The agent keeps its own
+  copy of the kind allow-list and refuses anything else with `failed`. It runs `PATH KIND` with the
+  JSON args on stdin, no shell, a 60 s timeout and a clean environment; stdout must be one JSON object
+  ≤ 64 KiB (`result`), a non-zero exit or invalid output is `failed` with the last 2 KiB of stderr.
+  Without the flag the agent never polls. The executable belongs to the tracked site (infraegev2
+  `scripts/operator-command.sh`) and validates the arguments again.
+
+**Operator API (session, §4d write guard).**
+- `POST /api/operator/commands` `{host_id, kind, args, reason?, password?}` → `202 {command}`; `400`
+  field-addressed on an invalid kind or args. `terminate` and `refund_execute` require the admin
+  password again (**step-up**): wrong or missing → `403`, counted by the failed-login limiter.
+- `GET /api/operator/commands?limit=` (default 50, max 200, newest first) and
+  `GET /api/operator/commands/{id}` (the UI polls it until the command leaves `queued`/`running`).
+- Incidents: `GET/POST /api/operator/incidents`, `PATCH /api/operator/incidents/{id}`,
+  `DELETE /api/operator/incidents/{id}`. Table `incidents (id, title 1–200, kind leak|outage|other,
+  detected_at, scope, people_affected, measures, rkn_primary_at, rkn_final_at, users_notified_at,
+  notes, closed_at, created_at, updated_at)`. For a `leak` the UI counts down to `detected_at + 24 h`
+  (primary RKN notice) and `+ 72 h` (final notice) until the matching time is recorded; filing with
+  RKN stays manual (152-ФЗ ст. 21 ч. 3.1). Incidents are kept until deleted by hand.
+- `GET /api/audit?limit=&before=` → newest first. Table `audit_log (id, at, action, target,
+  detail_json, client, outcome)` is **append-only**: SQLite triggers refuse `UPDATE` and refuse
+  `DELETE` of rows younger than 3 years; the retention job deletes older rows. Every operator write
+  (command queued, step-up refused, command result, incident create/update/delete) appends a row;
+  `detail_json` holds the kind, args and reason, never a password or a command result.
+
+**Documents.** The tracked site reports kind `operator` with schema `kodumka.operator/1`
+(`generated_at`; `signals[]` — accounts above a sharing threshold with `user_id`, `email`, `flags`,
+counters and active sessions `{label, city, ip, last_seen_at}`; `restrictions[]` active measures;
+`refunds[]` requested, pending or failed). `account_show` returns schema `kodumka.account/1`
+(account, access, payments, sessions with IP and city, devices, measures, 30 days of counters). Both
+are produced by infraegev2 (Change 199); this repo parses them and shows unknown schemas as unknown.
+
+**Security trade-off.** A compromised monitoring server can queue only the allow-listed measures and
+refunds of unused days for one site; it cannot run other commands on the host. The host revalidates
+every argument, the site mails the student on every measure, and every request is in the audit log.
+
 ## 4a. Other interfaces
 
 `/healthz` and `/health/ready` (exact release) exist since Change 01; UI/admin APIs are specified
@@ -657,6 +716,16 @@ guide shows how many were set aside.
 
 Network and analytics are explained but never assessed: they have no universal "normal". Missing
 data is `unknown`, which is never assessed as `normal`.
+
+- **Operator (Change 30, architect decision 2026-10-24).** A tab `operator` after `sales` shows the
+  tracked site's `operator` document and the console of §4j: **SIGNALS** (accounts above a
+  threshold, their counters and active sessions with city and IP; actions Warn / Suspend /
+  Terminate through a confirmation dialog that repeats the numbers and asks for the reason the
+  student sees, and the admin password for Terminate), **RESTRICTIONS** (Lift, Lift + compensate),
+  **REFUNDS** (Execute, with the password), **ACCOUNT** (search by email → `account_show` card),
+  **INCIDENTS** (form, 24 h / 72 h countdowns for a leak, the response checklist) and **AUDIT**
+  (newest first). Command state is text (`queued`, `running`, `done`, `failed`, `expired`). The view
+  loads when opened and refreshes every minute.
 
 **Two views, minimal navigation (Changes 14–15, architect decision 2026-09-22, supersedes the
 original "one page, no navigation" rule):** the original single-page design had no navigation by
@@ -753,7 +822,11 @@ Security: no hardcoded secrets, secrets scan and dependency audit in the Full Ga
 images. Backup: `admin` command produces a consistent SQLite snapshot bundle. Live-update latency
 within a few seconds. Agent footprint: small enough to run on the smallest VPS. Privacy (site
 analytics, §4i): no cookies, no persistent visitor identifier, no raw IP stored, no cross-site or
-cross-day tracking — see §4i for the exact construction.
+cross-day tracking — see §4i for the exact construction. Operator data (§4j, Change 30) holds the
+tracked site's personal data — email, account ID, IP and city of active sessions — by the
+architect's decision (2026-10-24; both servers in Russia): the `operator` document is replaced on
+every report, command results are cleared after 30 days, the audit log keeps kinds, targets and
+reasons for 3 years; passwords and payment card data never reach this server.
 
 ## 7. Roadmap
 
@@ -767,6 +840,7 @@ cross-day tracking — see §4i for the exact construction.
 | 5 | Docker, logs, fail2ban in the agent |
 | 6 | Distribution: image/binary, ACME, backup, deploy workflow, runbook |
 | 7 | **Done** — dogfooded on a real VPS against infraegev2's production host; v2 backlog derived (§9) |
+| 8 | Operator console for the tracked site (§4j, Change 30; site side in infraegev2 Change 199) |
 
 ## 8. Open Questions
 

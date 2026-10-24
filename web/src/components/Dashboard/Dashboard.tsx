@@ -26,6 +26,8 @@ import { UptimeSection } from './UptimeSection'
 import { StatusStrip, type BackupCount, type HostEntry } from './StatusStrip'
 import { SummaryLine } from './SummaryLine'
 import { GuideNavContext } from '../Guide/GuideNav'
+import { OperatorView } from '../Operator/OperatorView'
+import { useOperator } from '../../data/useOperator'
 import styles from './Dashboard.module.css'
 
 // The guide is text the Monitoring view does not need: loaded on first use, outside the main bundle.
@@ -58,7 +60,7 @@ interface DashboardProps {
   store?: DashboardStore
 }
 
-/** The whole product on four views: Monitoring (default), Analytics, Sales and the Guide (docs/SPEC.md §5). */
+/** The whole product on five views: Monitoring (default), Analytics, Sales, Operator and the Guide (docs/SPEC.md §5). */
 export function Dashboard({ onLogout, store }: DashboardProps) {
   return (
     <DashboardProvider store={store}>
@@ -173,6 +175,8 @@ function DashboardView({ onLogout }: { onLogout: () => Promise<void> }) {
           <AnalyticsView status={sites.status} error={sites.error} sites={sites.sites} onAddSite={() => setAddingSite(true)} />
         ) : view === 'sales' ? (
           <SalesSection now={now} />
+        ) : view === 'operator' ? (
+          <OperatorSection now={now} />
         ) : (
           <Suspense
             fallback={
@@ -190,6 +194,23 @@ function DashboardView({ onLogout }: { onLogout: () => Promise<void> }) {
       <AddSiteDialog open={addingSite} onOpenChange={setAddingSite} onCreated={sites.reload} />
     </div>
     </GuideNavContext.Provider>
+  )
+}
+
+/** The operator console loads only while its view is open and refreshes every minute (Change 30). */
+function OperatorSection({ now }: { now: number }) {
+  const op = useOperator()
+  return (
+    <OperatorView
+      status={op.status}
+      error={op.error}
+      documents={op.documents}
+      commands={op.commands}
+      incidents={op.incidents}
+      audit={op.audit}
+      now={now}
+      onReload={op.reload}
+    />
   )
 }
 

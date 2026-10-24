@@ -60,6 +60,22 @@ A host that also writes a business summary for the **sales** view (Change 27) pa
 `smotryashchiy agent run --interval 10s --business-file /var/lib/infraege/business/summary.json`.
 The agent sends the file when it changes; the server keeps the latest one.
 
+The tracked site's host also gets the **operator** console (Change 30, docs/SPEC.md §4j): it reports
+its operator file and names the one executable that may answer operator commands:
+
+```bash
+smotryashchiy agent run --interval 10s \
+  --document business=/var/lib/infraege/business/summary.json \
+  --document operator=/var/lib/infraege/ops/operator.json \
+  --operator-command /opt/infraege/current/scripts/operator-command.sh
+```
+
+`--operator-command` takes an absolute path to an executable file owned by the host; the agent then
+asks the server for queued commands every 15 seconds through the tunnel, runs only the allow-listed
+kinds (`warn`, `suspend`, `terminate`, `lift`, `refund_execute`, `account_show`) as `PATH KIND` with the
+arguments as JSON on stdin, a clean environment and a 60-second limit, and reports the JSON answer.
+Without the flag the agent never asks for commands, and the host still opens no ports.
+
 ## Health
 
 `GET /health/ready` answers `200` with the release SHA and `503` when the database cannot be reached. The

@@ -19,6 +19,7 @@ export type LessonId =
   | "uptime"
   | "backups"
   | "analytics"
+  | "operator"
   | "triage";
 
 export interface Lesson {
@@ -372,6 +373,34 @@ export const LESSONS: Lesson[] = [
     act: [
       "Open the site in a browser with developer tools: is `track.js` loaded and does the beacon get 204?",
     ],
+  },
+  {
+    id: "operator",
+    title: "Operator: shared accounts and measures",
+    summary:
+      "The tracked site reports accounts that look shared and the measures running against them; from here the operator warns, suspends or ends paid access, executes refunds, looks up an account and keeps incidents. The site's host runs every command and answers it.",
+    body: [
+      "A signal is a hint, never a verdict. The site raises one when an account was used from several cities on one day, when a fourth device pushed an older session out, or when many new devices signed in. How much someone reads never raises a signal: an active student must not look like a thief.",
+      "Measures go in steps, as the site's offer promises: a warning (all sessions end, the student gets an email), a suspension of paid access for up to 30 days, and only then the end of paid access with a refund of the unused days. Each one names its reason; the student reads it, so write it calmly and concretely.",
+      "Nothing acts on its own. A button queues a command; the agent on the site's host asks for commands every 15 seconds, runs only the allow-listed ones through the site's own script, and reports the result. Ending access and executing a refund ask for the admin password again. The audit log records every request and answer and cannot be edited.",
+      "Incidents are kept by hand. For a personal-data leak the law gives 24 hours for the first notice to RKN and 72 hours for the final one, counted from detection; the countdown shows how much time is left until you record that a notice was sent.",
+    ],
+    normal: [
+      "The report is minutes old, there are no signals or only ones you have already looked at, no refund waits.",
+    ],
+    worry: [
+      "A stale report: the site's ten-minute job or its agent stopped, and the numbers here are old.",
+      "A signal with several cities at once and devices pushed out every day.",
+      "A command that stays queued: the agent does not run with --operator-command.",
+      "A leak deadline marked soon or overdue.",
+    ],
+    act: [
+      "Open the account card before any measure and read its days, sessions and payments.",
+      "Start with a warning; suspend only on repetition; end access only when the abuse is clear.",
+      "If a student appeals and is right, lift the measure with compensation: access is extended by the suspended time.",
+      "After a leak, follow the checklist in INCIDENTS and record each notice as you send it.",
+    ],
+    thresholds: "signal: 3 cities in a day, 3 sessions pushed out or 4 new devices in the period; report stale after 30 min; a leak deadline is soon in its last quarter",
   },
   {
     id: "triage",

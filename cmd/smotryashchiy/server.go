@@ -16,6 +16,9 @@ import (
 	authapp "github.com/avatarsik6699/smotryashchiy/internal/auth/application"
 	authinfra "github.com/avatarsik6699/smotryashchiy/internal/auth/infrastructure"
 	authhttp "github.com/avatarsik6699/smotryashchiy/internal/auth/interfaces/http"
+	operatorapp "github.com/avatarsik6699/smotryashchiy/internal/operator/application"
+	operatorinfra "github.com/avatarsik6699/smotryashchiy/internal/operator/infrastructure"
+	operatorhttp "github.com/avatarsik6699/smotryashchiy/internal/operator/interfaces/http"
 	"github.com/avatarsik6699/smotryashchiy/internal/platform/config"
 	"github.com/avatarsik6699/smotryashchiy/internal/platform/db"
 	"github.com/avatarsik6699/smotryashchiy/internal/platform/httpserver"
@@ -65,10 +68,11 @@ func runServer(stdout, stderr io.Writer) error {
 
 	srv := httpserver.New(cfg.Addr)
 	httpserver.RegisterHealth(srv.Mux, cfg.Release, sqlDB.PingContext)
-	authhttp.NewHandlers(auth, authhttp.Options{
+	authHandlers := authhttp.NewHandlers(auth, authhttp.Options{
 		SecureCookies:     cfg.SecureCookies,
 		TrustedProxyCIDRs: cfg.TrustedProxyCIDRs,
-	}).Register(srv.Mux)
+	})
+	authHandlers.Register(srv.Mux)
 	store := telemetryinfra.NewStore(sqlDB)
 	hub := telemetryapp.NewHub()
 	telemetrySvc := telemetryapp.NewService(store).WithPublisher(hub)
@@ -86,8 +90,13 @@ func runServer(stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
+	// Change 30: the operator console; its agent routes ride the tunnel mux next to ingest.
+	operatorSvc := operatorapp.NewService(operatorinfra.NewStore(sqlDB), time.Now, operatorinfra.NewID)
+	operatorhttp.NewHandlers(operatorSvc, authHandlers).Register(srv.Mux)
+	go operatorSvc.Run(ctx)
 	go func() {
-		if err := telemetryhttp.ServeTunnel(ctx, tunnelLn, telemetryhttp.NewIngestHandlers(telemetrySvc, enrollment)); err != nil {
+		if err := telemetryhttp.ServeTunnel(ctx, tunnelLn, telemetryhttp.NewIngestHandlers(telemetrySvc, enrollment),
+			operatorhttp.NewAgentHandlers(operatorSvc, enrollment)); err != nil {
 			slog.Error("tunnel ingest listener stopped", "err", err)
 		}
 	}()

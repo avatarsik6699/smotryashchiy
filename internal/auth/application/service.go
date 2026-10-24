@@ -129,6 +129,19 @@ func (s *Service) Login(ctx context.Context, password string) (domain.Session, e
 	return session, nil
 }
 
+// VerifyPassword checks the admin password without issuing a session: the step-up confirmation
+// of a destructive operator command (docs/SPEC.md §4j).
+func (s *Service) VerifyPassword(ctx context.Context, password string) error {
+	hash, ok, err := s.store.Hash(ctx)
+	if err != nil {
+		return fmt.Errorf("auth: read password hash: %w", err)
+	}
+	if !ok || !domain.VerifyPassword(hash, password) {
+		return domain.ErrInvalidCredentials
+	}
+	return nil
+}
+
 // Logout invalidates the session identified by token; unknown tokens are ignored.
 func (s *Service) Logout(token string) {
 	s.mu.Lock()

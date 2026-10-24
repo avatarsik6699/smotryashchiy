@@ -21,7 +21,9 @@
 
 .tabs {
   display: inline-flex;
+  flex-wrap: wrap;
   gap: var(--space-1);
+  max-width: 100%;
 }
 
 .tab {

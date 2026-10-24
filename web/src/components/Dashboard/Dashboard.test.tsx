@@ -231,6 +231,7 @@ describe('HOSTS ledger', () => {
     await user.tab() // monitoring tab
     await user.tab() // analytics tab
     await user.tab() // sales tab
+    await user.tab() // operator tab
     await user.tab() // guide tab
     await user.tab() // add host
     await user.tab() // logout

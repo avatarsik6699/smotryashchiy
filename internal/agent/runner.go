@@ -29,9 +29,14 @@ type RunConfig struct {
 	EventCollectors []collect.EventCollector
 	// DocumentCollectors yield whole JSON documents, such as a business summary (Change 27).
 	DocumentCollectors []collect.DocumentCollector
-	Dial               Dialer
-	Now                func() time.Time
-	Log                *slog.Logger
+	// OperatorCommand is the host's operator executable (Change 30); empty means the agent never
+	// asks for commands. OperatorRunner and OperatorInterval are test seams.
+	OperatorCommand  string
+	OperatorRunner   Runner
+	OperatorInterval time.Duration
+	Dial             Dialer
+	Now              func() time.Time
+	Log              *slog.Logger
 }
 
 // ValidateInterval reports whether d is inside the allowed range.
@@ -72,6 +77,24 @@ func Run(ctx context.Context, rc RunConfig) error {
 	}()
 	if sp.Len() > 0 {
 		kick <- struct{}{} // resume delivery of what a previous run left behind
+	}
+	operatorDone := make(chan struct{})
+	if rc.OperatorCommand != "" {
+		op := &Operator{Path: rc.OperatorCommand, Link: sender.Link, Run: rc.OperatorRunner,
+			Interval: rc.OperatorInterval, Timeout: OperatorTimeout, Log: rc.Log}
+		if op.Run == nil {
+			op.Run = ExecRunner
+		}
+		if op.Interval <= 0 {
+			op.Interval = OperatorPollInterval
+		}
+		rc.Log.Info("operator commands enabled", "executable", rc.OperatorCommand)
+		go func() {
+			defer close(operatorDone)
+			op.Loop(ctx)
+		}()
+	} else {
+		close(operatorDone)
 	}
 
 	failing := map[string]bool{} // collector -> currently failing (log once per streak)
@@ -161,6 +184,7 @@ func Run(ctx context.Context, rc RunConfig) error {
 	for {
 		select {
 		case <-ctx.Done():
+			<-operatorDone
 			<-done
 			rc.Log.Info("agent stopped", "queued", sp.Len())
 			return nil

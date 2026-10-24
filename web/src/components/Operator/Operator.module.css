@@ -1,0 +1,288 @@
+/* Operator (Change 30): the site's console as ruled ledgers, like Sales — hairlines and tabular
+   alignment, no cards (docs/reference/DESIGN.md). Actions sit at the end of the row they act on. */
+
+.view {
+  display: grid;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+}
+
+.title {
+  margin: 0;
+  font-size: clamp(1.25rem, 3vw, 1.5rem);
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.source {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px var(--space-1);
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+.pulse {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--status-unreachable);
+}
+
+.source[data-state='ok'] .pulse,
+[data-state='done'] > .pulse {
+  background: var(--status-ok);
+}
+
+.source[data-state='stale'] .pulse,
+[data-state='soon'] > .pulse,
+[data-state='running'] > .pulse,
+[data-state='queued'] > .pulse {
+  background: var(--status-warn);
+}
+
+[data-state='overdue'] > .pulse,
+[data-state='failed'] > .pulse,
+[data-state='expired'] > .pulse {
+  background: var(--status-critical);
+}
+
+.muted {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.measures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--space-3) var(--space-4);
+  margin: 0;
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.measure {
+  display: grid;
+  gap: 2px;
+}
+
+.label {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.value {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+.block {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.block > h3 {
+  margin: 0;
+}
+
+.scroll {
+  position: relative; /* keeps visually hidden header text inside the scroller */
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  min-width: 40rem; /* narrow screens scroll the ledger instead of breaking words apart */
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.table th,
+.table td {
+  padding: 6px var(--space-2) 6px 0;
+  border-bottom: 1px solid var(--hairline);
+  text-align: left;
+  font-weight: 400;
+  vertical-align: top;
+}
+
+.table thead th {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.table tbody tr:hover {
+  background: var(--raised);
+}
+
+.table .num {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+.sessions {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--text-muted);
+}
+
+.rowActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.start {
+  justify-content: flex-start;
+}
+
+.actionCell {
+  width: 1%;
+  white-space: nowrap;
+}
+
+/* In a row the actions stay on one line; the table scrolls on narrow screens instead. */
+.actionCell .rowActions {
+  flex-wrap: nowrap;
+}
+
+.select {
+  font: inherit;
+  color: inherit;
+}
+
+.state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  white-space: nowrap;
+}
+
+.lookup {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+
+.card {
+  display: grid;
+  gap: var(--space-3);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--hairline);
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px var(--space-3);
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+.facts dt {
+  color: var(--text-muted);
+}
+
+.facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.checklist {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: var(--space-3);
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.deadlines {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.incidentForm {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-2);
+  align-items: end;
+}
+
+.wide {
+  grid-column: 1 / -1;
+}
+
+.textarea {
+  min-height: 4.5rem;
+  resize: vertical;
+}
+
+.result {
+  max-height: 16rem;
+  margin: 0;
+  overflow: auto;
+  padding: var(--space-1);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  font-size: 0.75rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.detail {
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 720px) {
+  .value {
+    font-size: 1.25rem;
+  }
+
+  .facts {
+    grid-template-columns: 1fr;
+  }
+
+  .facts dd {
+    margin-bottom: var(--space-1);
+  }
+
+  .rowActions {
+    justify-content: flex-start;
+  }
+}

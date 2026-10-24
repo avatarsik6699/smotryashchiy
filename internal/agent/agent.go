@@ -161,6 +161,7 @@ func (e *StatusError) Error() string {
 // Session is one tunnel to the server that can carry many batches.
 type Session struct {
 	tunnel *transport.Client
+	base   string // http://<server tunnel address>:<port>
 	url    string
 	client *http.Client
 }
@@ -184,9 +185,11 @@ func Dial(ctx context.Context, cfg Config) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
+	base := "http://" + netip.AddrPortFrom(tunnel.ServerIP(), transport.IngestPort).String()
 	return &Session{
 		tunnel: tunnel,
-		url:    fmt.Sprintf("http://%s/api/ingest", netip.AddrPortFrom(tunnel.ServerIP(), transport.IngestPort)),
+		base:   base,
+		url:    base + "/api/ingest",
 		client: tunnel.HTTPClient(httpTimeout),
 	}, nil
 }

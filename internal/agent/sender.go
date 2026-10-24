@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"math/rand/v2"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/avatarsik6699/smotryashchiy/internal/agent/spool"
@@ -33,6 +34,7 @@ type Sender struct {
 	dial  Dialer
 	log   *slog.Logger
 
+	mu    sync.Mutex // guards up: the operator poller borrows the same session (Change 30)
 	up    Uplink
 	fails int // consecutive failures
 }
@@ -47,10 +49,28 @@ func (s *Sender) Failures() int { return s.fails }
 
 // Close releases the tunnel session, if any.
 func (s *Sender) Close() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if s.up != nil {
 		s.up.Close()
 		s.up = nil
 	}
+}
+
+// Link returns the current tunnel session, dialing one when there is none. The agent keeps one
+// WireGuard device per key, so everything that talks to the server shares this session; a caller
+// that gets an error simply tries again later.
+func (s *Sender) Link(ctx context.Context) (Uplink, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.up == nil {
+		up, err := s.dial(ctx)
+		if err != nil {
+			return nil, err
+		}
+		s.up = up
+	}
+	return s.up, nil
 }
 
 // Drain sends queued batches until the spool is empty. It returns nil when empty and an error when
@@ -66,14 +86,11 @@ func (s *Sender) Drain(ctx context.Context) error {
 			s.fails = 0
 			return nil
 		}
-		if s.up == nil {
-			up, err := s.dial(ctx)
-			if err != nil {
-				return s.fail(err)
-			}
-			s.up = up
+		up, err := s.Link(ctx)
+		if err != nil {
+			return s.fail(err)
 		}
-		res, err := s.up.Send(ctx, entry.Key, entry.Batch)
+		res, err := up.Send(ctx, entry.Key, entry.Batch)
 		if err != nil {
 			var status *StatusError
 			if errors.As(err, &status) && (status.Code == http.StatusBadRequest || status.Code == http.StatusRequestEntityTooLarge) {

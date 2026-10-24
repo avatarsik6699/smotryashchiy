@@ -110,6 +110,14 @@ Agents reconnect on their own: the WireGuard server key is part of the bundle. P
 - **Sales** (Change 27): the source line shows the summary's age; past two hours it reads stale —
   check the site's hourly billing timer (`journalctl -u infraege-billing-hourly`) and that the agent
   unit runs with `--business-file`. `GET /api/documents?kind=business` shows what the server holds.
+- **Operator** (Change 30): the source line shows the operator report's age; past 30 minutes it reads
+  stale — check the site's `infraege-operator-export.timer` and that the agent unit has
+  `--document operator=…`. A command that stays `queued` and then `expired` (10 minutes) means the
+  agent runs without `--operator-command` or cannot reach the tunnel; a `failed` command carries the
+  executable's refusal or the last lines of its stderr. Every queued command, step-up refusal, answer
+  and incident change is in AUDIT (`GET /api/audit`); the table refuses edits, and rows younger than
+  three years cannot be deleted even with the database open. Command results (they may name people)
+  are cleared after 30 days.
 
 ## Failure playbooks
 

@@ -19,7 +19,7 @@ import (
 	"github.com/avatarsik6699/smotryashchiy/internal/telemetry/domain"
 )
 
-const agentUsage = "usage: smotryashchiy agent enroll --server URL --secret S [--config PATH] | agent run [--config PATH] [--interval 10s] [--spool-dir DIR] [--document KIND=PATH]... [--business-file PATH] | agent push-file FILE [--config PATH] [--key KEY]"
+const agentUsage = "usage: smotryashchiy agent enroll --server URL --secret S [--config PATH] | agent run [--config PATH] [--interval 10s] [--spool-dir DIR] [--document KIND=PATH]... [--business-file PATH] [--operator-command PATH] | agent push-file FILE [--config PATH] [--key KEY]"
 
 const defaultAgentConfig = "agent.json"
 
@@ -94,6 +94,7 @@ func runAgentLoop(ctx context.Context, args []string) error {
 	businessFile := fs.String("business-file", "", "alias of --document business=PATH (Change 27)")
 	var documentFlags repeatedFlag
 	fs.Var(&documentFlags, "document", "KIND=PATH: report a JSON file as a document of that kind when it changes; repeatable (Change 29)")
+	operatorCommand := fs.String("operator-command", "", "the host's operator executable; enables the operator command channel (Change 30)")
 	if err := fs.Parse(args); err != nil || fs.NArg() != 0 {
 		return errors.New(agentUsage)
 	}
@@ -111,7 +112,17 @@ func runAgentLoop(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	if *operatorCommand != "" {
+		if !filepath.IsAbs(*operatorCommand) {
+			return errors.New("agent run: --operator-command must be an absolute path")
+		}
+		info, err := os.Stat(*operatorCommand)
+		if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o111 == 0 {
+			return fmt.Errorf("agent run: --operator-command %s must be an executable file", *operatorCommand)
+		}
+	}
 	return agent.Run(ctx, agent.RunConfig{
+		OperatorCommand:    *operatorCommand,
 		DocumentCollectors: documents,
 		Interval:           *interval,
 		SpoolDir:           *spoolDir,

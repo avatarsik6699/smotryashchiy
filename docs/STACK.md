@@ -11,7 +11,7 @@
 
 | Layer | Technology |
 |-------|-----------|
-| Backend | Go 1.26.9 minimum (`go.mod`; earlier patches carry fixed stdlib CVEs), single binary with `server` / `agent` / `admin` modes |
+| Backend | Go 1.26.10 minimum (`go.mod`; earlier patches carry fixed stdlib CVEs), single binary with `server` / `agent` / `admin` modes |
 | Database | SQLite via `modernc.org/sqlite` (pure Go, WAL, single writer), embedded forward-only migrations |
 | Realtime | `github.com/coder/websocket` (server-to-client stream at `/api/stream`) |
 | Transport | `golang.zx2c4.com/wireguard` (userspace WireGuard + gVisor netstack; pure Go, no root, no kernel module) |
@@ -22,7 +22,7 @@
 ## Setup
 
 ```bash
-go version                 # >= 1.26.9 (go.mod triggers an automatic toolchain download if older)
+go version                 # >= 1.26.10 (go.mod triggers an automatic toolchain download if older)
 cp .env.example .env       # optional; every variable has a development default
 go run ./cmd/smotryashchiy admin host create --name vps-1   # prints the one-time agent enroll command
 go run ./cmd/smotryashchiy agent run --config agent.json --interval 10s   # after `agent enroll`; Linux only
@@ -112,13 +112,15 @@ cmd/smotryashchiy/   # single entrypoint, mode subcommands
 internal/platform/   # config, db (migrations), httpserver, apierror
 internal/auth/       # admin password, sessions (domain/application/infrastructure/interfaces)
 internal/transport/  # userspace WireGuard server/client wrappers (keys, peers, tunnel listener)
-internal/agent/      # agent: enroll, persistent tunnel session, sender (retry/backoff), run loop, batch builder
+internal/agent/      # agent: enroll, persistent tunnel session, sender (retry/backoff), run loop, batch builder,
+                     # operator poller (allow-listed host executable, Change 30)
 internal/agent/collect/  # /proc + statfs collectors (cpu, memory/swap, disk, network, load, uptime);
                          # optional Docker (local socket), journald + Docker log tail, fail2ban
                          # (log tail + `fail2ban-client`) — each disables itself if unavailable
 internal/agent/spool/    # durable bounded FIFO of unsent batches (offline buffer)
 web/                 # single-page UI (Vite app) + embed.go (go:embed all:dist, static handler, CSP)
 internal/uptime/     # uptime prober: targets (http/tcp/tls), checker, scheduler, results, API (own context, own tables)
+internal/operator/   # operator console (Change 30): command queue + tunnel claim/result, audit log, incidents, API
 internal/telemetry/  # Metric/Check/Event contract, ingest service, SQLite store, read API,
                      # hourly rollups + retention jobs (Maintenance), live stream hub + WebSocket
                      # bounded contexts talk through ports (application interfaces), not internals

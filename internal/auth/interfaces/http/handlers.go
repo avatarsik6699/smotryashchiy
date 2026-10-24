@@ -82,6 +82,28 @@ func (h *Handlers) login(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// StepUp checks the admin password again for a destructive operator command (docs/SPEC.md §4j).
+// It shares the login limiter: a wrong password counts as a failed login, and a limited client is
+// refused before the password is checked.
+func (h *Handlers) StepUp(r *http.Request, password string) error {
+	client := h.loginLimiter.clientKey(r)
+	if _, limited := h.loginLimiter.retryAfter(client); limited {
+		return apierror.Forbidden("too many password attempts; try again later")
+	}
+	if err := h.service.VerifyPassword(r.Context(), password); err != nil {
+		if errors.Is(err, domain.ErrInvalidCredentials) {
+			h.loginLimiter.failure(client)
+			return apierror.Forbidden("the admin password is required for this command")
+		}
+		return err
+	}
+	h.loginLimiter.success(client)
+	return nil
+}
+
+// ClientIP is the request's client address behind the trusted proxies, for the audit log.
+func (h *Handlers) ClientIP(r *http.Request) string { return h.loginLimiter.clientIP(r) }
+
 // sessionState reports whether the request carries a valid session. It answers 200 in both cases:
 // "not logged in" is an answer here, not an error, so browsers do not log a failed request.
 func (h *Handlers) sessionState(w http.ResponseWriter, r *http.Request) {

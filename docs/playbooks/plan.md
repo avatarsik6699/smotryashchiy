@@ -6,9 +6,7 @@ and switch to its feature branch.
 
 This document is the single source of truth for the `plan` workflow.
 
-In an integrated project, runtime wrappers under `.claude/skills/plan/SKILL.md` (Claude Code),
-`.agents/skills/plan/SKILL.md` (generic agent), and `plugins/sdd-workflow/{commands,skills}/plan/...`
-(Codex) point here. The wrappers are thin stubs — every workflow detail lives in this file.
+The Claude Code wrapper `.claude/skills/plan/SKILL.md` points here. The wrappers are thin stubs — every workflow detail lives in this file.
 
 ## Input
 

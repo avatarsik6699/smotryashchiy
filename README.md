@@ -4,9 +4,10 @@
 хосты, контейнеры, uptime, логи и безопасность — из коробки, одним бинарником, без внешних
 зависимостей и без аккаунтов в сторонних системах. Только наблюдение (read-only).
 
-**Статус:** рабочий MVP (без алертов и Telegram, они отложены): агент с метриками хоста, WireGuard-транспорт,
-единая страница-дашборд, uptime-проверки (HTTP/TCP/TLS), статический бинарник и Docker-образ, онлайн-бэкап,
-встроенный TLS (ACME) и релизный CI/CD-workflow. См. [`docs/SPEC.md`](docs/SPEC.md), [`docs/DEPLOY.md`](docs/DEPLOY.md),
+**Статус:** в работе (без алертов и Telegram, они отложены): агент с метриками хоста, WireGuard-транспорт,
+дашборд с видами monitoring, analytics, sales, operator и guide, uptime-проверки (HTTP/TCP/TLS), аналитика
+сайта без cookie, операторская консоль, статический бинарник и Docker-образ, онлайн-бэкап и off-host копия
+Restic, встроенный TLS (ACME) и релизный CI/CD-workflow. См. [`docs/SPEC.md`](docs/SPEC.md), [`docs/DEPLOY.md`](docs/DEPLOY.md),
 [`docs/RUNBOOK.md`](docs/RUNBOOK.md) и [`AGENTS.md`](AGENTS.md).
 
 Быстрый старт: `docker compose` из [`deploy/`](deploy/docker-compose.yml) — с собственным обратным прокси

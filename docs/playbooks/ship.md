@@ -8,9 +8,7 @@ This document is the single source of truth for the `ship` workflow. It replaces
 `phase-gate` + `context-update` pair: there is no Current Contract/Phase Status/Project Log left
 to synchronize after archival, since the archive folder and git history are the record.
 
-In an integrated project, runtime wrappers under `.claude/skills/ship/SKILL.md` (Claude Code),
-`.agents/skills/ship/SKILL.md` (generic agent), and `plugins/sdd-workflow/{commands,skills}/ship/...`
-(Codex) point here. The wrappers are thin stubs — every workflow detail lives in this file.
+The Claude Code wrapper `.claude/skills/ship/SKILL.md` points here. The wrappers are thin stubs — every workflow detail lives in this file.
 
 ## Input
 

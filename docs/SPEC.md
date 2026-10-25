@@ -54,13 +54,13 @@ looks healthy; observe, and act only through the closed operator command set of 
 ## 2. Domain
 
 Entities (carried over from the predecessor's proven contract):
-`Project → Host | Check target → (Metric | Check | Event) → Alert`
+`Project → Host | Check target → (Metric | Check | Event)`; alerts are deferred (§7)
 
 - **Host** — a machine running an agent (identity, enrollment, last-seen).
 - **Uptime target** — a URL/endpoint probed by the server itself (§4e); its results are their own
   records, not host telemetry.
 - **Metric** — `{name, ts, value, labels}` time series. **Check** — `{name, ts, status: ok|warn|critical, meta}`.
-  **Event** — `{ts, level, message, labels}`. **Alert** — derived by the router from rules.
+  **Event** — `{ts, level, message, labels}`.
 - **Site** — a website an operator tracks for visitor analytics (§4i, Changes 14–15); a bounded
   context of its own, unrelated to Host telemetry. **Pageview** — `{site, ts, path, referrer_domain,
   visitor_hash, browser, os, device}`, server-derived from an anonymous beacon; no persistent
@@ -75,19 +75,19 @@ once and never re-alerted. Additive-only versioning after v1.
 ```text
  host A                          server (one binary/container)              operator
  ┌──────────┐  WireGuard tunnel  ┌───────────────────────────────┐  HTTPS   ┌─────────┐
- │  agent   │ ─────────────────▶ │ ingest → SQLite → alerts → WS │ ◀──────▶ │ browser │
+ │  agent   │ ─────────────────▶ │ ingest → SQLite → WS stream   │ ◀──────▶ │ browser │
  └──────────┘  (userspace, in    │ uptime prober · embedded SPA  │  (ACME)  └─────────┘
                the binary)       └───────────────────────────────┘
 ```
 
-- **One binary, three modes.** `server`, `agent`, `admin` (stdin-only password set, backup,
-  telemetry reset). Collectors are ordinary internal Go packages; there is no adapter subprocess
+- **One binary, three modes.** `server`, `agent`, `admin` (stdin-only password set, host create,
+  backup, restore). Collectors are ordinary internal Go packages; there is no adapter subprocess
   protocol, manifest layer or third-party credential store.
 - **Agent transport: WireGuard, implemented in userspace inside the binary**
   (`wireguard-go` + netstack). It needs no kernel module, no `wireguard-tools`, no root for the
   tunnel and no firewall changes beyond one UDP port on the server. The agent is pinned to the
   server's key, so identity and encryption come from the tunnel; ingest is reachable only inside
-  it. *Fallback if the Stage-2 spike disproves this:* HTTPS push with a per-host bearer token.
+  it.
 - **Enrollment.** The UI creates a host and shows one command containing the server endpoint and a
   one-time enrollment secret; the agent generates its own keypair, registers its public key, and
   receives a tunnel address. No SSH, no passwords.
@@ -197,12 +197,8 @@ in Stage 2; Change 03 publishes from the ingest service so that stage needs no s
 
 ## 4b. Transport, enrollment and ingest (Change 04)
 
-**Transport spike (passed 2026-09-21).** Change 04 opened with a spike proving userspace WireGuard
-(`wireguard-go` + gVisor netstack, no kernel module, no root) carries HTTP between a server and an
-agent in one Go test. Verdict recorded in the change file. If the spike fails, work stops for an
-architect decision on the §3 fallback (HTTPS push with a per-host bearer token); the contracts
-below (enroll → host identity → `POST /api/ingest`) stay the same, only the identity mechanism
-changes. Real-NAT reliability cannot be proven locally and is verified on a VPS (Stage 7).
+Userspace WireGuard (`wireguard-go` + gVisor netstack) carries the agent's HTTP; real-internet
+reliability was confirmed in the Stage 7 dogfood.
 
 **Tunnel.** The server owns a WireGuard device (UDP `SMOTRYASHCHIY_WG_PORT`, default `51820`)
 inside the process, address `.1` of `SMOTRYASHCHIY_TUNNEL_CIDR` (default `10.99.0.0/16`). Its private
@@ -230,9 +226,8 @@ address via `host_peers`, never from a client-supplied ID. Responses: `200`
 error, `413` body over 1 MiB, `429` when a host exceeds 10 batches/s. It calls the same
 `Service.Ingest` as tests and publishes accepted records to the live stream (§4.6).
 
-**Agent (Change 04).** Only `agent enroll` (keypair, enrollment call, writes
-`agent.json` config `0600`) and a `agent push-file FILE` helper that sends a §4.1 batch through the
-tunnel; collectors and the run loop are Change 05.
+**Agent enrollment.** `agent enroll` generates the keypair, calls enrollment and writes `agent.json`
+(`0600`); `agent push-file FILE` sends a §4.1 batch through the tunnel. The run loop is §4c.
 
 ## 4c. Agent runtime and metric catalog (Change 05)
 
@@ -294,8 +289,9 @@ All routes below except static assets require the session cookie.
   `SMOTRYASHCHIY_PUBLIC_URL` when set (validated `http(s)` URL, required in production), otherwise
   derived from the request (`https` when the request is TLS or cookies are `Secure`).
 - `GET /api/metrics?step=N` as in §4.3.
-- **Static delivery.** The SPA is built to `web/dist` and embedded (`go:embed`). A stub
-  `dist/index.html` is committed so `go build` never needs node. Paths not under `/api/` and not a
+- **Static delivery.** The SPA is built to `web/dist` and embedded (`go:embed`). Only
+  `web/dist/.gitkeep` is committed; without a build `go build` embeds `web/placeholder.html`, so it
+  never needs node. Paths not under `/api/` and not a
   health probe are public static content (no secrets live in the bundle): `/` and unknown non-file paths
   return `index.html` (SPA fallback, `no-cache`), `/assets/*` are content-hashed (`immutable`, 1 year).
   Everything under `/api/` keeps §3's rules: session required except `POST /api/auth/login`,
@@ -363,8 +359,8 @@ The server probes operator-defined **targets** itself; nothing runs on the monit
   `HEALTHCHECK` runs `smotryashchiy healthcheck`, which requests `GET /health/ready` on the configured
   listen address (loopback for wildcard addresses) with a 3 s timeout and exits `0` only on `200`.
 - **Compose example** `deploy/docker-compose.yml`: the server with a named volume, the two ports, a
-  read-only rootfs and the production environment (§ STACK env table). Change 10 adds a built-in-ACME compose variant (§4g); until then, or if you prefer it, production
-  mode expects a TLS-terminating reverse proxy (`SECURE_COOKIES`, `TRUSTED_PROXY_CIDRS`).
+  read-only rootfs and the production environment (§ STACK env table). With a TLS-terminating reverse proxy production mode expects `SECURE_COOKIES` and
+  `TRUSTED_PROXY_CIDRS`; the built-in-ACME variant is §4g.
 - **Backup.** `smotryashchiy admin backup --out FILE|-` writes a consistent snapshot of a **running** server's
   database (SQLite `VACUUM INTO`, no downtime) as a `.tar.gz` holding `smotryashchiy.db` and
   `manifest.json` (`created_at`, `release`, `migrations`, `db_sha256`). The bundle contains secrets (the
@@ -405,8 +401,8 @@ The server probes operator-defined **targets** itself; nothing runs on the monit
   (a trusted reverse proxy: `SECURE_COOKIES=true` and `TRUSTED_PROXY_CIDRS` set) — never neither.
 - **Release automation.** `.github/workflows/release.yml`, triggered by a `v*` tag: builds the release
   binaries and `SHA256SUMS` (`scripts/build-release.sh`) and attaches them to a GitHub Release; builds a
-  multi-arch (`amd64`+`arm64`) image, runs `scripts/image-smoke.sh` and `scripts/image-scan.sh` against
-  it, and on PASS pushes `ghcr.io/<owner>/smotryashchiy:<tag>` and `:latest`. A release that fails smoke
+  multi-arch (`amd64`+`arm64`) image, runs `scripts/image-smoke.sh` (on the runner's native amd64
+  image; arm64 is built but not executed) and `scripts/image-scan.sh`, and on PASS pushes `ghcr.io/<owner>/smotryashchiy:<tag>` and `:latest`. A release that fails smoke
   or scan is not published.
 - **Runbook** (`docs/RUNBOOK.md`): first deploy with built-in ACME, a backup schedule example, routine
   checks, and playbooks for the failures operators actually hit (certificate not issued, agent can't
@@ -433,9 +429,7 @@ placeholder row.
   Missing/unreadable socket (no Docker installed, or the agent's user lacks access) disables this
   collector for the run, logged once, like any other collector failure.
   **Collection time (Change 19).** A `stats?stream=false` call blocks ~2 s while Docker samples CPU
-  twice, so calling it container by container made one tick take ~18 s with 9 containers on
-  infraege.ru, and the agent delivered every ~18 s instead of every `--interval` (the ticker drops
-  ticks that fire during a slow collection). Stats are fetched concurrently, at most 8 at a time,
+  twice, so sequential calls would stretch a tick past `--interval`. Stats are fetched concurrently, at most 8 at a time,
   under a per-tick deadline of `min(interval − 1 s, 5 s)`. A container whose stats have not arrived
   by the deadline is omitted for that tick (not a zero, not a stale repeat).
 - **Log/event collection** (journald + Docker container logs): tailed continuously (not polled),
@@ -459,7 +453,7 @@ placeholder row.
   dependency, matches the "no third-party agent library" rule already applied to host metrics in
   §4c); a source that cannot be tailed (journald absent, e.g. non-systemd hosts) disables that part
   of the collector, logged once.
-  **Source ownership and labels (Change 19).** With Docker's `journald` log driver (infraege.ru's
+  **Source ownership and labels (Change 19).** With Docker's `journald` log driver (the tracked site's
   setting) every container line also lands in the journal as `_SYSTEMD_UNIT=docker.service` with a
   `CONTAINER_NAME` field, so the same line was forwarded twice — once per source, with different
   levels. The journald source skips any entry that carries `CONTAINER_NAME`; container output is
@@ -521,7 +515,7 @@ stored them, the current snippet no longer sends them, and the server still acce
 the request's `Origin` hostname is the site's `domain` or `www.` plus it (Change 18). Browsers send
 `Origin` on every cross-origin POST, including `sendBeacon`. The rule drops the tracked site's own
 local, CI and Lighthouse runs, whose pages are served from `localhost`/`127.x` and would otherwise
-write test traffic into production counts, as seen on infraege.ru. It also drops a missing or `null`
+write test traffic into production counts, as seen on the tracked site. It also drops a missing or `null`
 `Origin`: non-browser clients, and pages with `Referrer-Policy: no-referrer`, which are then not
 tracked. It is a data-quality filter, not authentication, since a non-browser client can forge the
 header. Always answers `204` regardless
@@ -541,7 +535,7 @@ hostname is the site's own domain or `www.` plus it (internal navigation is not 
 `browser`/`os`/`device` are derived server-side from the `User-Agent` request header, never taken
 from the client body (keeps the payload small and unspoofable-by-omission). Browsers named:
 Yandex Browser (`YaBrowser/`, the largest non-Chrome share of a Russian audience such as
-infraege.ru's), Edge, Opera, Firefox (including `FxiOS/` on iOS), Chrome (including `CriOS/` on iOS),
+the tracked site's), Edge, Opera, Firefox (including `FxiOS/` on iOS), Chrome (including `CriOS/` on iOS),
 Safari, else `Other` — checked in that order, since each of them also carries the tokens of the
 engines after it (Change 20). A server-side known-bot `User-Agent` pattern list is a second filter
 beyond "the browser ran the JS at all" (some crawlers execute JavaScript); it includes
@@ -677,8 +671,8 @@ below change:
   counts and repository sizes, holds, backup-disk free space and failed units; a host row expands in
   place to the full job list. Its worst level joins the summary line. Without any backup document the
   ledger says how to start reporting one. A summary in another schema is shown as unknown.
-- The guide is a step-by-step course on reading the dashboard, with 15 lessons from how data
-  flows to a triage checklist. Each lesson shows the live values of the operator's own hosts,
+- The guide is a step-by-step course on reading the dashboard, with 16 lessons from how data
+  flows to a triage checklist and the operator console. Each lesson shows the live values of the operator's own hosts,
   judged by the same rules as the dashboard.
 - Every section and block title has a `?` button that opens a popover with a short explanation,
   the thresholds and a "read the lesson" link to the matching guide lesson.
@@ -727,12 +721,12 @@ data is `unknown`, which is never assessed as `normal`.
   (newest first). Command state is text (`queued`, `running`, `done`, `failed`, `expired`). The view
   loads when opened and refreshes every minute.
 
-**Two views, minimal navigation (Changes 14–15, architect decision 2026-09-22, supersedes the
-original "one page, no navigation" rule):** the original single-page design had no navigation by
+**Views, minimal navigation (Changes 14–15, later views 27–30; architect decision 2026-09-22):** the original single-page design had no navigation by
 intent, but Site analytics (§4i) is a genuinely different domain — visitor/page/referrer breakdowns,
 not infrastructure health at a glance — and does not fit as another ledger row on the Monitoring
-view. A minimal text-style tab control in the command bar (`[monitoring] [analytics]`, same hairline/
-mono language, no icons) switches between the two; this is the only navigation the UI gains, it does
+view. A minimal text-style tab control in the command bar (`monitoring`, `analytics`, `sales`,
+`operator`, `guide`; same hairline/mono language, no icons) switches between the views; this is the
+only navigation the UI has, it does
 not reopen the door to a router, deep links, or per-section pages. Separators everywhere stay
 whitespace and hairlines, never cards — the simplification of the predecessor's Dashboard / Sources /
 Notifications / Source-detail structure (`docs/reference/`), which stays frozen as a design donor.
@@ -830,40 +824,11 @@ reasons for 3 years; passwords and payment card data never reach this server.
 
 ## 7. Roadmap
 
-| Stage | Change scope |
-|-------|--------------|
-| 0 | Repo, SPEC/STACK, first change: skeleton (binary, SQLite, migrations, auth, CI) |
-| 1 | Data core: contract, ingest, storage, retention/rollup, WS |
-| 2 | Agent v1: host metrics, WireGuard transport (spike first), enrollment |
-| 3 | UI v1: Dashboard, Hosts, Host detail (embedded SPA) |
-| 4 | Uptime prober. **Alert rules, alert lifecycle and Telegram are deferred** (architect decision 2026-09-21); revisit after the MVP is dogfooded |
-| 5 | Docker, logs, fail2ban in the agent |
-| 6 | Distribution: image/binary, ACME, backup, deploy workflow, runbook |
-| 7 | **Done** — dogfooded on a real VPS against infraegev2's production host; v2 backlog derived (§9) |
-| 8 | Operator console for the tracked site (§4j, Change 30; site side in infraegev2 Change 199) |
+Stages 0–8 are done: skeleton, data core, agent, UI, uptime prober, Docker/logs/fail2ban, distribution
+(image, ACME, backup, release workflow, runbook), the Stage 7 dogfood against kodumka.ru's production
+host, and the operator console (§4j). Open for a future brief: **alert rules, alert lifecycle and
+Telegram** (deferred by the architect 2026-09-21).
 
 ## 8. Open Questions
 
-- Stage-2 spike: local proof is Change 04's first item; reliability across common VPS/NAT setups is
-  confirmed at Stage 7, otherwise fall back to HTTPS push. **Resolved at Stage 7**: confirmed
-  reliable agent→server over the public internet between two independent VPS providers (real
-  ACME/TLS, real WireGuard tunnel, ~16 days uptime as of the dogfood check).
-- Supported agent platforms: Linux amd64/arm64 for MVP (assumption).
-
-## 9. v2 Backlog (from the Stage 7 dogfood)
-
-Real deployment (server on a dedicated monitoring VPS, agent on infraegev2's own production host,
-both real providers, real Let's Encrypt certificate, real fail2ban/Docker/journald data) surfaced
-these candidates for the next planning round — none are committed yet, all need an architect brief
-before a `/plan`:
-
-- ~~**Dashboard surfacing for Change 11's signals.**~~ In progress as Change 12 (§5's CONTAINERS
-  panel, generic Check-meta display, EVENTS source labels + filter).
-- ~~**Event volume from health-check polling.**~~ In progress as Change 13 (§4h's health-check
-  noise filter).
-- ~~**Analytics.**~~ Clarified (2026-09-22): cookieless JS-based site visitor analytics, replacing
-  the predecessor's separate Umami container. In progress as Changes 14 (ingest/storage/API/
-  snippet, §4i) and 15 (Analytics view, §5).
-- **Alerts and Telegram**, deferred at Stage 4, remain open for v2.
-- ~~**Release automation** never exercised by a real tag push.~~ Done: `v0.1.0` (2026-09-22) went
-  through the full gate-then-publish workflow — GHCR image and GitHub Release both confirmed live.
+- Supported agent platforms: Linux amd64/arm64 (assumption, not tested on arm64 hosts).

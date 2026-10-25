@@ -10,9 +10,7 @@ appended to the Backlog, not fixed off-list.
 
 This document is the single source of truth for the `work` workflow.
 
-In an integrated project, runtime wrappers under `.claude/skills/work/SKILL.md` (Claude Code),
-`.agents/skills/work/SKILL.md` (generic agent), and `plugins/sdd-workflow/{commands,skills}/work/...`
-(Codex) point here. The wrappers are thin stubs — every workflow detail lives in this file.
+The Claude Code wrapper `.claude/skills/work/SKILL.md` points here. The wrappers are thin stubs — every workflow detail lives in this file.
 
 ## Input
 

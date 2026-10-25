@@ -109,7 +109,7 @@ Agents reconnect on their own: the WireGuard server key is part of the bundle. P
   log line (no IP or User-Agent). Counters reset on restart.
 - **Sales** (Change 27): the source line shows the summary's age; past two hours it reads stale —
   check the site's hourly billing timer (`journalctl -u infraege-billing-hourly`) and that the agent
-  unit runs with `--business-file`. `GET /api/documents?kind=business` shows what the server holds.
+  unit runs with `--document business=…`. `GET /api/documents?kind=business` shows what the server holds.
 - **Operator** (Change 30): the source line shows the operator report's age; past 30 minutes it reads
   stale — check the site's `infraege-operator-export.timer` and that the agent unit has
   `--document operator=…`. A command that stays `queued` and then `expired` (10 minutes) means the
@@ -201,7 +201,8 @@ docker compose start server
 ```
 
 **Disk filling up faster than expected.**
-Lower `SMOTRYASHCHIY_RAW_RETENTION_DAYS`/`SMOTRYASHCHIY_ROLLUP_RETENTION_DAYS` (restart to apply); purges
+Lower `SMOTRYASHCHIY_RAW_RETENTION_DAYS`/`SMOTRYASHCHIY_ROLLUP_RETENTION_DAYS`, or
+`SMOTRYASHCHIY_ANALYTICS_RETENTION_DAYS` for pageviews (restart to apply); purges
 run at start-up and then on their own schedule, so growth stops within one purge cycle, not instantly.
 
 ## Upgrade and rollback
@@ -216,7 +217,7 @@ with the data.
 The agent is the same binary as the server. On each monitored host:
 
 ```bash
-v=v0.2.6; cd /tmp
+v=vX.Y.Z; cd /tmp   # the release being installed, e.g. the latest GitHub Release
 curl -fsSLO "https://github.com/avatarsik6699/smotryashchiy/releases/download/$v/smotryashchiy-linux-amd64"
 curl -fsSLO "https://github.com/avatarsik6699/smotryashchiy/releases/download/$v/SHA256SUMS"
 sha256sum --ignore-missing -c SHA256SUMS

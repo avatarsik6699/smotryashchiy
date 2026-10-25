@@ -30,8 +30,8 @@ tooling live in [`docs/STACK.md`](docs/STACK.md).
 
 Before writing code, running commands, or reasoning about project layout, read
 [`docs/STACK.md`](docs/STACK.md). It is the source of truth for concrete technologies, setup
-commands, gate commands (Fast/Full/Release), required tooling, and per-module style guides.
-Frontend conventions will be added to `docs/STACK.md` when the first UI change lands.
+commands, gate commands (Fast/Full/Release), required tooling, and per-module style guides,
+including the frontend conventions.
 
 If a stack convention is missing from `STACK.md`, do not invent it.
 Ask the user, then update the relevant file so the answer is durable.

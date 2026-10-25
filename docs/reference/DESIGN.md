@@ -67,6 +67,9 @@ components:
     padding: "14px 0"
 ---
 
+> **Predecessor design.** Written for sre-kit and kept as smotryashchiy's visual source: its tokens
+> live in `web/src/styles/tokens.css`; the current product contract is `docs/SPEC.md`.
+
 # Design System: sre-kit
 
 ## Overview

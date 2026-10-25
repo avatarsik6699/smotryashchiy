@@ -5,7 +5,7 @@
 > Gate tables. Keep them accurate. Rows for areas that do not exist yet are `n/a` and get filled by
 > the change that introduces the area.
 >
-> **Stack status:** MINIMAL (Go backend, agent, and the web UI foundation; dashboard and deploy pending their changes)
+> **Stack status:** in production since v0.2 (server, agent, dashboard with monitoring, analytics, sales, operator console and guide; off-host backup recipe)
 
 ## Stack
 
@@ -16,7 +16,6 @@
 | Realtime | `github.com/coder/websocket` (server-to-client stream at `/api/stream`) |
 | Transport | `golang.zx2c4.com/wireguard` (userspace WireGuard + gVisor netstack; pure Go, no root, no kernel module) |
 | Frontend | Embedded static SPA in `web/`: Vite 8, React 19, TypeScript 7 (strict), `@base-ui/react` (Form/Field/Button, later Accordion/Dialog/Tooltip), `uplot` (charts), CSS Modules, npm; tests: Vitest + Testing Library + vitest-axe |
-| Transport | Userspace WireGuard inside the binary — pending Stage-2 spike |
 | CI | GitHub Actions (`.github/workflows/ci.yml`) on pull requests and pushes to `main` |
 
 ## Setup
@@ -66,7 +65,7 @@ disables that collector for the run, it is never required to build or run the ag
 | Frontend typecheck | `npm --prefix web run typecheck` | only when `web/` changed |
 | Frontend tests | `npm --prefix web test` | only when `web/` changed; includes axe accessibility checks |
 | Backup recipe | `shellcheck deploy/backup/*.sh deploy/backup/tests/*.sh && bash deploy/backup/tests/smotryashchiy-backup.test.sh` | only when `deploy/backup/` changed; fake docker/restic, no network (Change 29) |
-| LSP diagnostics | `no — gopls not configured` | informational |
+| LSP diagnostics | `~/go/bin/gopls check <files>` | informational; installed locally, not a CI row |
 
 ## Full Gate
 
@@ -109,7 +108,9 @@ disables that collector for the run, it is never required to build or run the ag
 
 ```
 cmd/smotryashchiy/   # single entrypoint, mode subcommands
-internal/platform/   # config, db (migrations), httpserver, apierror
+internal/platform/   # config, db (migrations), httpserver (+ tunnel peer), apierror (+ JSON),
+                     # ratelimit (keyed limiter, trusted-proxy client address), logging, backup
+internal/analytics/  # site analytics (Changes 14–15): beacon collect, sites, pageview rollups, API
 internal/auth/       # admin password, sessions (domain/application/infrastructure/interfaces)
 internal/transport/  # userspace WireGuard server/client wrappers (keys, peers, tunnel listener)
 internal/agent/      # agent: enroll, persistent tunnel session, sender (retry/backoff), run loop, batch builder,
@@ -124,13 +125,14 @@ internal/operator/   # operator console (Change 30): command queue + tunnel clai
 internal/telemetry/  # Metric/Check/Event contract, ingest service, SQLite store, read API,
                      # hourly rollups + retention jobs (Maintenance), live stream hub + WebSocket
                      # bounded contexts talk through ports (application interfaces), not internals
-deploy/              # docker-compose example; Dockerfile at the repo root
+deploy/              # docker-compose example, deploy/backup (off-host Restic recipe); Dockerfile at the root
+scripts/             # release build, image smoke/scan, bundle budget, secrets and vuln gates
 docs/                # SPEC, STACK, playbooks, changes/, reference/ (predecessor design donors)
 ```
 
 ## Frontend conventions
 
-- One page, no router (SPEC §5). Design tokens live in `web/src/styles/tokens.css` (from
+- One page with view tabs, no router (SPEC §5). Design tokens live in `web/src/styles/tokens.css` (from
   `docs/reference/DESIGN.md`); components use CSS Modules and token variables only, no hard-coded colors.
 - Use Base UI (`@base-ui/react/<component>`) for every control it offers; wrap only for styling.
   Do not pass `invalid` to `Field.Root` for server-side errors (it blocks resubmission); use `aria-invalid` + text.

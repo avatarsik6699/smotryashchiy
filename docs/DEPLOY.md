@@ -56,9 +56,10 @@ smotryashchiy agent run --interval 10s
 
 The agent needs outbound UDP to `SMOTRYASHCHIY_PUBLIC_ENDPOINT` only; it opens no ports.
 
-A host that also writes a business summary for the **sales** view (Change 27) passes its path:
-`smotryashchiy agent run --interval 10s --business-file /var/lib/infraege/business/summary.json`.
-The agent sends the file when it changes; the server keeps the latest one.
+A host that writes documents for the dashboard passes each as `--document KIND=PATH`: `business`
+for the **sales** view (Change 27), `backup` for the BACKUPS ledger (Change 29) and `operator` for
+the console (Change 30). The agent sends a file when it changes; the server keeps the latest one per
+host and kind. `--business-file PATH` is the older spelling of `--document business=PATH`.
 
 The tracked site's host also gets the **operator** console (Change 30, docs/SPEC.md §4j): it reports
 its operator file and names the one executable that may answer operator commands:
@@ -76,6 +77,23 @@ kinds (`warn`, `suspend`, `terminate`, `lift`, `refund_execute`, `account_show`)
 arguments as JSON on stdin, a clean environment and a 60-second limit, and reports the JSON answer.
 Without the flag the agent never asks for commands, and the host still opens no ports.
 
+The repository ships no agent unit; on the hosts it is a plain service (production keeps the flags
+in a drop-in such as `smotryashchiy-agent.service.d/10-documents.conf`):
+
+```ini
+[Unit]
+Description=smotryashchiy agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/smotryashchiy agent run --interval 10s
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
 ## Health
 
 `GET /health/ready` answers `200` with the release SHA and `503` when the database cannot be reached. The
@@ -84,8 +102,9 @@ container `HEALTHCHECK` runs `smotryashchiy healthcheck`, which asks that endpoi
 
 ## Backup and restore
 
-The database holds everything: hosts, telemetry, uptime targets, the admin password hash and the
-WireGuard server key. A backup is a consistent snapshot of a **running** server, no downtime:
+The database holds everything: hosts, telemetry, uptime targets, sites and pageviews, the latest
+documents, operator commands, incidents and the audit log, the admin password hash and the WireGuard
+server key. A backup is a consistent snapshot of a **running** server, no downtime:
 
 ```bash
 (umask 077; docker compose exec -T server /smotryashchiy admin backup --out - > backup-$(date +%F).tar.gz)

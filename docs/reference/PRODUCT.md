@@ -1,3 +1,6 @@
+> **Predecessor document.** This is the product contract of sre-kit, smotryashchiy's predecessor,
+> kept frozen as a design donor. The current contract is `docs/SPEC.md`.
+
 # sre-kit product contract
 
 ## Product

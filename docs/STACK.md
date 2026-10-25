@@ -76,6 +76,7 @@ disables that collector for the run, it is never required to build or run the ag
 | Frontend install | `npm --prefix web ci` | lockfile install |
 | Frontend typecheck | `npm --prefix web run typecheck` | `tsc --noEmit`, strict |
 | Frontend tests / a11y | `npm --prefix web test` | Vitest; `vitest-axe` checks components |
+| History tooling | `python3 -m unittest discover -s scripts/tests -p change_history_test.py` | only when `scripts/change_history.py` changed; stdlib Python 3 |
 | Frontend build | `npm --prefix web run build` | writes `web/dist`, which `go build` embeds |
 | Bundle budget | `bash scripts/bundle-budget.sh` | gzip JS <= 200 KB (`BUNDLE_BUDGET_KB` overrides) |
 | Backend tests | `go test ./...` | |

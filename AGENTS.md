@@ -65,9 +65,13 @@ Keep lightweight long-lived project memory in `docs/`:
 - Each `docs/changes/*.md` (and, once shipped, `docs/changes/archive/*.md`) § Implementation Notes
   — non-obvious deviations for that unit of work.
 - `docs/KNOWN_GOTCHAS.md` — recurring pitfalls, symptoms, and fixes.
+- `docs/changes/archive/COMPACTED.md` — verified snapshot of compacted archives with their outcomes,
+  decisions and open risks; replaced only by an explicitly approved compaction change
+  ([procedure](docs/CHANGE_HISTORY.md)).
 
 There is no separate contract-mirror file to keep in sync. The codebase is the source of truth for
-what currently exists; `docs/changes/archive/` is the source of truth for what's already shipped.
+what currently exists; `docs/changes/archive/` (with `COMPACTED.md`) is the source of truth for what's
+already shipped.
 
 ## Filesystem Permission Failures
 

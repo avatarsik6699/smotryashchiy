@@ -225,7 +225,8 @@ Carry these into the first contract tests instead of rediscovering them in produ
 - **Fix**: only the ACME *server* needs a resolver override that answers your test domain (Pebble's own
   `-dnsserver` flag); the *client* (our binary) should resolve the CA's own hostname normally. Verified
   with a full local exchange (server + Pebble + pebble-challtestsrv), see
-  `docs/changes/archive/10-acme-deploy-runbook.md` Implementation Notes.
+  `docs/changes/archive/10-acme-deploy-runbook.md` Implementation Notes (read it with
+  `python3 scripts/change_history.py read`).
 
 ### A tailed collector's events need their own timestamp, not the batch's tick time
 

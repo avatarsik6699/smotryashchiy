@@ -9,7 +9,7 @@
 | Change | `34` |
 | Slug | `history-compaction` |
 | Title | History tooling and compaction of 01–33 |
-| Status | `done` |
+| Status | `archived` |
 | Branch | `feature/34-history-compaction` |
 
 ---

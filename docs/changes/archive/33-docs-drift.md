@@ -9,7 +9,7 @@
 | Change | `33` |
 | Slug | `docs-drift` |
 | Title | Documentation drift and history in SPEC |
-| Status | `done` |
+| Status | `archived` |
 | Branch | `feature/33-docs-drift` |
 
 ---

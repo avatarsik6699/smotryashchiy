@@ -9,7 +9,7 @@
 | Change | `32` |
 | Slug | `code-cleanup` |
 | Title | Code cleanup: shared client address, duplicates, dead code |
-| Status | `done` |
+| Status | `archived` |
 | Branch | `feature/32-code-cleanup` |
 
 ---

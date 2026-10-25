@@ -17,13 +17,6 @@ export interface Assessment {
   reason: string;
 }
 
-export const LEVEL_LABEL: Record<Level, string> = {
-  normal: "normal",
-  watch: "watch",
-  problem: "problem",
-  unknown: "unknown",
-};
-
 interface Band {
   watch: number;
   problem: number;

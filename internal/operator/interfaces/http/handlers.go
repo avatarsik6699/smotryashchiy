@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"net"
 	"net/http"
 	"net/netip"
 	"strconv"
@@ -15,6 +14,7 @@ import (
 	"github.com/avatarsik6699/smotryashchiy/internal/operator/application"
 	"github.com/avatarsik6699/smotryashchiy/internal/operator/domain"
 	"github.com/avatarsik6699/smotryashchiy/internal/platform/apierror"
+	"github.com/avatarsik6699/smotryashchiy/internal/platform/httpserver"
 )
 
 const maxBody = 16 << 10
@@ -172,15 +172,11 @@ func (h *AgentHandlers) Register(mux *http.ServeMux) {
 }
 
 func (h *AgentHandlers) host(r *http.Request) (string, error) {
-	addr, _, err := net.SplitHostPort(r.RemoteAddr)
+	ip, err := httpserver.TunnelPeer(r)
 	if err != nil {
-		return "", apierror.Unauthorized("unknown tunnel peer")
+		return "", err
 	}
-	ip, err := netip.ParseAddr(addr)
-	if err != nil {
-		return "", apierror.Unauthorized("unknown tunnel peer")
-	}
-	hostID, ok, err := h.hosts.HostForTunnelIP(r.Context(), ip.Unmap())
+	hostID, ok, err := h.hosts.HostForTunnelIP(r.Context(), ip)
 	if err != nil {
 		return "", err
 	}
@@ -241,9 +237,8 @@ func decode(w http.ResponseWriter, r *http.Request, into any) error {
 	return nil
 }
 
+// writeJSON marks operator responses no-store: they carry account emails and addresses.
 func writeJSON(w http.ResponseWriter, status int, body any) {
-	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(body)
+	apierror.JSON(w, status, body)
 }

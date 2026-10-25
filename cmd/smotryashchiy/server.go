@@ -84,7 +84,7 @@ func runServer(stdout, stderr io.Writer) error {
 		return err
 	}
 	defer tunnel.Close()
-	telemetryhttp.NewEnrollHandlers(enrollment).Register(srv.Mux)
+	telemetryhttp.NewEnrollHandlers(enrollment, cfg.TrustedProxyCIDRs).Register(srv.Mux)
 	telemetryhttp.NewHostsHandlers(telemetrySvc, enrollment, cfg.PublicURL, cfg.SecureCookies).Register(srv.Mux)
 	tunnelLn, err := tunnel.Listen(transport.IngestPort)
 	if err != nil {

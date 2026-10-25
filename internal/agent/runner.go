@@ -67,6 +67,10 @@ func Run(ctx context.Context, rc RunConfig) error {
 		return err
 	}
 	rc.Log.Info("agent started", "interval", rc.Interval, "spool_dir", rc.SpoolDir, "queued", sp.Len())
+	if n := sp.Corrupt(); n > 0 {
+		// Unreadable spool files are dropped on Open; say so, or the lost batches leave no trace.
+		rc.Log.Warn("agent spool discarded unreadable batches", "count", n)
+	}
 
 	sender := NewSender(sp, rc.Dial, rc.Log)
 	kick := make(chan struct{}, 1)

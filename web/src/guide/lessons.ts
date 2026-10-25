@@ -79,7 +79,7 @@ export const LESSONS: Lesson[] = [
       "A daily routine that takes a minute: read the summary line; glance at the HOSTS rows (all OK, values not colored); look at UPTIME (UP, certificate not close to expiry); scroll EVENTS for anything red. Once a week, open each host and look at the disk trend and the containers list.",
     ],
     normal: [
-      '"All good: 2/2 hosts reporting, infraege.ru up (…), max disk …, no errors in the last hour".',
+      '"All good: 2/2 hosts reporting, kodumka.ru up (…), max disk …, no errors in the last hour".',
     ],
     worry: [
       '"Watch: …" — read what it names, and open that host or target.',
@@ -203,7 +203,7 @@ export const LESSONS: Lesson[] = [
     ],
     act: [
       "On the server: `df -h` and `du -xh / --max-depth=2 | sort -h | tail` to find what grew.",
-      "Docker: `docker system df`; old images can go (`docker image prune`). infraege.ru deploys already keep only the three newest releases.",
+      "Docker: `docker system df`; old images can go (`docker image prune`). kodumka.ru deploys already keep only the three newest releases.",
       "Logs: journald is capped by its own config; a runaway application log belongs in its logging settings.",
     ],
     thresholds: `fullest mount — ${pct(t.disk)}`,
@@ -236,12 +236,12 @@ export const LESSONS: Lesson[] = [
     summary:
       "Each running Docker container with its image, CPU and memory. Only containers with fresh data are listed, so one that stopped disappears.",
     body: [
-      "On a Docker host the agent reads each running container's CPU and memory. The image column tells you which version runs; on infraege.ru it ends with the release SHA, so after a deploy you can check the new release is really running.",
+      "On a Docker host the agent reads each running container's CPU and memory. The image column tells you which version runs; on kodumka.ru it ends with the release SHA, so after a deploy you can check the new release is really running.",
       "Container CPU is a share of the whole machine. Container memory percent is relative to the container's memory limit, or to the host's RAM when there is no limit.",
       "A container that exits stops reporting and drops out of the list within five minutes. A container that is missing when it should be there is itself the signal.",
     ],
     normal: [
-      "The expected set (for infraege.ru: api, web, nginx, postgres), all with the current release image.",
+      "The expected set (for kodumka.ru: api, web, nginx, postgres), all with the current release image.",
     ],
     worry: [
       "A container missing from the list.",
@@ -421,7 +421,7 @@ export const LESSONS: Lesson[] = [
     act: [
       "Server access: `ssh root@<host>`.",
       'Useful commands: `systemctl --failed`, `docker ps -a`, `df -h`, `free -h`, `journalctl -p err --since "1 hour ago"`.',
-      "The infraege.ru production runbook (in its repository) covers deploys, rollbacks and backups.",
+      "The kodumka.ru production runbook (in its repository) covers deploys, rollbacks and backups.",
     ],
   },
 ];

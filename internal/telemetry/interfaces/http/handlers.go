@@ -39,7 +39,7 @@ func (h *Handlers) documents(w http.ResponseWriter, r *http.Request) {
 		apierror.Write(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{"documents": docs})
+	apierror.JSON(w, http.StatusOK, map[string]any{"documents": docs})
 }
 
 // Response items are explicit structs (never omitempty) so a zero value is always serialized.
@@ -119,7 +119,7 @@ func (h *Handlers) metrics(w http.ResponseWriter, r *http.Request) {
 		for _, p := range rollups {
 			items = append(items, rollupJSON{Host: p.HostID, Name: p.Name, TS: p.TS, Count: p.Count, Min: p.Min, Max: p.Max, Avg: p.Avg, Labels: p.Labels})
 		}
-		writeJSON(w, map[string]any{"rollups": items})
+		apierror.JSON(w, http.StatusOK, map[string]any{"rollups": items})
 		return
 	}
 	points, err := h.service.Metrics(r.Context(), query)
@@ -131,7 +131,7 @@ func (h *Handlers) metrics(w http.ResponseWriter, r *http.Request) {
 	for _, p := range points {
 		items = append(items, metricJSON{Host: p.HostID, Name: p.Name, TS: p.TS, Value: p.Value, Labels: p.Labels})
 	}
-	writeJSON(w, map[string]any{"metrics": items})
+	apierror.JSON(w, http.StatusOK, map[string]any{"metrics": items})
 }
 
 func (h *Handlers) checks(w http.ResponseWriter, r *http.Request) {
@@ -145,7 +145,7 @@ func (h *Handlers) checks(w http.ResponseWriter, r *http.Request) {
 	for _, c := range states {
 		items = append(items, checkJSON{Host: c.HostID, Name: c.Name, TS: c.TS, Status: c.Status, Meta: c.Meta})
 	}
-	writeJSON(w, map[string]any{"checks": items})
+	apierror.JSON(w, http.StatusOK, map[string]any{"checks": items})
 }
 
 func (h *Handlers) events(w http.ResponseWriter, r *http.Request) {
@@ -164,7 +164,7 @@ func (h *Handlers) events(w http.ResponseWriter, r *http.Request) {
 	for _, e := range entries {
 		items = append(items, eventJSON{Host: e.HostID, TS: e.TS, Level: e.Level, Message: e.Message, Labels: e.Labels})
 	}
-	writeJSON(w, map[string]any{"events": items})
+	apierror.JSON(w, http.StatusOK, map[string]any{"events": items})
 }
 
 func parseTime(q url.Values, key string) (*time.Time, error) {
@@ -202,9 +202,4 @@ func parseBool(q url.Values, key string) (bool, error) {
 		return false, apierror.Invalid(key + " must be a boolean")
 	}
 	return b, nil
-}
-
-func writeJSON(w http.ResponseWriter, body any) {
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(body)
 }

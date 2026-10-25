@@ -76,7 +76,7 @@ snapshot count, repository size, disk and failed units; a failed mode also fails
 then
 
 ```bash
-docker run --rm --env-file /etc/smotryashchiy/backup.env restic/restic:0.16.4 \
+docker run --rm --env-file /etc/smotryashchiy/backup.env restic/restic:0.16.4@sha256:dad38b8042cfb1a759a958ed0061b888ebd05b1e780125a1fb4e2d687c6c0556 \
   dump --tag smotryashchiy latest /smotryashchiy-backup.tar.gz |
   docker compose run --rm -T server admin restore --from - --force
 docker compose up -d

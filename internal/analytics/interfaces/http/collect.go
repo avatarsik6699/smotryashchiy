@@ -3,11 +3,9 @@ package http
 import (
 	"encoding/json"
 	"log/slog"
-	"net"
 	"net/http"
 	"net/netip"
 	"net/url"
-	"strings"
 	"time"
 
 	"github.com/avatarsik6699/smotryashchiy/internal/analytics/application"
@@ -101,26 +99,5 @@ func originHostname(r *http.Request) string {
 }
 
 func (h *CollectHandlers) clientIP(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		host = r.RemoteAddr
-	}
-	peer, err := netip.ParseAddr(host)
-	if err != nil || !h.isTrustedProxy(peer) {
-		return host
-	}
-	forwarded := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-For"), ",")[0])
-	if addr, err := netip.ParseAddr(forwarded); err == nil {
-		return addr.String()
-	}
-	return host
-}
-
-func (h *CollectHandlers) isTrustedProxy(addr netip.Addr) bool {
-	for _, p := range h.trustedProxies {
-		if p.Contains(addr) {
-			return true
-		}
-	}
-	return false
+	return ratelimit.ClientIP(r, h.trustedProxies)
 }

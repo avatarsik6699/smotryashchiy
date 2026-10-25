@@ -2,8 +2,11 @@
 package ratelimit
 
 import (
+	"net"
+	"net/http"
 	"net/netip"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -54,6 +57,25 @@ func ClientKey(addr string) string {
 	}
 	prefix, _ := ip.Prefix(64)
 	return prefix.String()
+}
+
+// ClientIP is the client address of r: the TCP peer, or the first X-Forwarded-For entry when the
+// peer is inside one of the trusted proxy prefixes. Every rate-limited endpoint uses it, so a
+// deployment behind a proxy never collapses all clients into the proxy's single bucket.
+func ClientIP(r *http.Request, trusted []netip.Prefix) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	peer, err := netip.ParseAddr(host)
+	if err != nil || !slices.ContainsFunc(trusted, func(p netip.Prefix) bool { return p.Contains(peer) }) {
+		return host
+	}
+	forwarded := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-For"), ",")[0])
+	if addr, err := netip.ParseAddr(forwarded); err == nil {
+		return addr.String()
+	}
+	return host
 }
 
 // Allow consumes one token for key and reports whether the event may proceed.

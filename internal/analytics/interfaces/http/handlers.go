@@ -32,7 +32,7 @@ func (h *Handlers) Register(mux *http.ServeMux) {
 
 // collectStats reports collect outcomes since the server started (Change 26).
 func (h *Handlers) collectStats(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"outcomes": h.service.CollectCounts()})
+	apierror.JSON(w, http.StatusOK, map[string]any{"outcomes": h.service.CollectCounts()})
 }
 
 func (h *Handlers) list(w http.ResponseWriter, r *http.Request) {
@@ -41,7 +41,7 @@ func (h *Handlers) list(w http.ResponseWriter, r *http.Request) {
 		apierror.Write(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"sites": sites})
+	apierror.JSON(w, http.StatusOK, map[string]any{"sites": sites})
 }
 
 func (h *Handlers) create(w http.ResponseWriter, r *http.Request) {
@@ -55,7 +55,7 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) {
 		apierror.Write(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, site)
+	apierror.JSON(w, http.StatusCreated, site)
 }
 
 func (h *Handlers) remove(w http.ResponseWriter, r *http.Request) {
@@ -72,11 +72,5 @@ func (h *Handlers) stats(w http.ResponseWriter, r *http.Request) {
 		apierror.Write(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, stats)
-}
-
-func writeJSON(w http.ResponseWriter, status int, body any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(body)
+	apierror.JSON(w, http.StatusOK, stats)
 }

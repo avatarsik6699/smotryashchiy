@@ -4,12 +4,12 @@ import (
 	"context"
 	"errors"
 	"io"
-	"net"
 	"net/http"
 	"net/netip"
 	"time"
 
 	"github.com/avatarsik6699/smotryashchiy/internal/platform/apierror"
+	"github.com/avatarsik6699/smotryashchiy/internal/platform/httpserver"
 	"github.com/avatarsik6699/smotryashchiy/internal/platform/ratelimit"
 	"github.com/avatarsik6699/smotryashchiy/internal/telemetry/application"
 	"github.com/avatarsik6699/smotryashchiy/internal/telemetry/domain"
@@ -57,17 +57,12 @@ type ingestResponse struct {
 }
 
 func (h *IngestHandlers) ingest(w http.ResponseWriter, r *http.Request) {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	ip, err := httpserver.TunnelPeer(r)
 	if err != nil {
-		apierror.Write(w, apierror.Unauthorized("unknown tunnel peer"))
+		apierror.Write(w, err)
 		return
 	}
-	ip, err := netip.ParseAddr(host)
-	if err != nil {
-		apierror.Write(w, apierror.Unauthorized("unknown tunnel peer"))
-		return
-	}
-	hostID, ok, err := h.hosts.HostForTunnelIP(r.Context(), ip.Unmap())
+	hostID, ok, err := h.hosts.HostForTunnelIP(r.Context(), ip)
 	if err != nil {
 		apierror.Write(w, err)
 		return
@@ -101,7 +96,7 @@ func (h *IngestHandlers) ingest(w http.ResponseWriter, r *http.Request) {
 		apierror.Write(w, err)
 		return
 	}
-	writeJSON(w, ingestResponse{
+	apierror.JSON(w, http.StatusOK, ingestResponse{
 		Accepted:   countsJSON{Metrics: len(result.Accepted.Metrics), Checks: len(result.Accepted.Checks), Events: len(result.Accepted.Events)},
 		Duplicates: countsJSON{Metrics: result.Duplicates.Metrics, Checks: result.Duplicates.Checks, Events: result.Duplicates.Events},
 		Replayed:   result.Replayed,

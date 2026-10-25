@@ -80,7 +80,7 @@ func newEnv(t *testing.T) *env {
 	mux := http.NewServeMux()
 	authHandlers := authhttp.NewHandlers(auth, authhttp.Options{})
 	authHandlers.Register(mux)
-	telemetryhttp.NewEnrollHandlers(enroll).Register(mux)
+	telemetryhttp.NewEnrollHandlers(enroll, nil).Register(mux)
 	NewHandlers(svc, authHandlers).Register(mux)
 	handler := authhttp.RequireSession(auth)(mux)
 

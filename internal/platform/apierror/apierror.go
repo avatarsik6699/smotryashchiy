@@ -70,7 +70,13 @@ func Write(w http.ResponseWriter, err error) {
 		status = statusFor(apiErr.Kind)
 		message = apiErr.Message
 	}
+	JSON(w, status, body{Error: message})
+}
+
+// JSON writes v as a JSON response with status; every handler's success bodies go through it so
+// the content type and encoding match the error bodies.
+func JSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(body{Error: message})
+	_ = json.NewEncoder(w).Encode(v)
 }

@@ -56,7 +56,7 @@ func (h *HostsHandlers) list(w http.ResponseWriter, r *http.Request) {
 	for _, host := range hosts {
 		items = append(items, toHostJSON(host))
 	}
-	writeJSON(w, map[string]any{"hosts": items})
+	apierror.JSON(w, http.StatusOK, map[string]any{"hosts": items})
 }
 
 type createHostRequest struct {

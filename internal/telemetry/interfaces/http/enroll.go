@@ -2,8 +2,8 @@ package http
 
 import (
 	"encoding/json"
-	"net"
 	"net/http"
+	"net/netip"
 	"strconv"
 	"time"
 
@@ -22,13 +22,15 @@ const (
 // EnrollHandlers serves the public agent enrollment endpoint (docs/SPEC.md §4b). The route is
 // exempt from session gating (see auth's public paths); the one-time secret is the credential.
 type EnrollHandlers struct {
-	service *application.EnrollmentService
-	limiter *ratelimit.Limiter
+	service        *application.EnrollmentService
+	limiter        *ratelimit.Limiter
+	trustedProxies []netip.Prefix
 }
 
-// NewEnrollHandlers wires EnrollHandlers to svc.
-func NewEnrollHandlers(svc *application.EnrollmentService) *EnrollHandlers {
-	return &EnrollHandlers{service: svc, limiter: ratelimit.New(enrollEvery, enrollBurst)}
+// NewEnrollHandlers wires EnrollHandlers to svc. trustedProxies is the same list the login and
+// collect limiters use, so clients behind a proxy keep their own buckets.
+func NewEnrollHandlers(svc *application.EnrollmentService, trustedProxies []netip.Prefix) *EnrollHandlers {
+	return &EnrollHandlers{service: svc, limiter: ratelimit.New(enrollEvery, enrollBurst), trustedProxies: trustedProxies}
 }
 
 // Register mounts POST /api/enroll on mux.
@@ -48,11 +50,7 @@ type enrollResponse struct {
 }
 
 func (h *EnrollHandlers) enroll(w http.ResponseWriter, r *http.Request) {
-	client, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		client = r.RemoteAddr
-	}
-	if !h.limiter.Allow(client) {
+	if !h.limiter.Allow(ratelimit.ClientKey(ratelimit.ClientIP(r, h.trustedProxies))) {
 		w.Header().Set("Retry-After", strconv.Itoa(int(enrollEvery/time.Second)))
 		writeStatus(w, http.StatusTooManyRequests, "too many enrollment attempts")
 		return
@@ -67,7 +65,7 @@ func (h *EnrollHandlers) enroll(w http.ResponseWriter, r *http.Request) {
 		apierror.Write(w, err)
 		return
 	}
-	writeJSON(w, enrollResponse{
+	apierror.JSON(w, http.StatusOK, enrollResponse{
 		HostID:          result.HostID,
 		TunnelIP:        result.TunnelIP.String(),
 		ServerPublicKey: result.Server.PublicKey,

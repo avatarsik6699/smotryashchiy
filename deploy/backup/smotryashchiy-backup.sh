@@ -14,7 +14,7 @@ set -euo pipefail
 
 ENV_FILE=${SMOTRYASHCHIY_BACKUP_ENV:-/etc/smotryashchiy/backup.env}
 STATE_DIR=${SMOTRYASHCHIY_BACKUP_STATE:-/var/lib/smotryashchiy}
-RESTIC_IMAGE=${RESTIC_IMAGE:-restic/restic:0.16.4}
+RESTIC_IMAGE=${RESTIC_IMAGE:-restic/restic:0.16.4@sha256:dad38b8042cfb1a759a958ed0061b888ebd05b1e780125a1fb4e2d687c6c0556}
 CACHE_VOLUME=smotryashchiy-restic-cache
 TAG=smotryashchiy
 BUNDLE_NAME=smotryashchiy-backup.tar.gz

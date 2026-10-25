@@ -32,7 +32,7 @@ func (h *Handlers) list(w http.ResponseWriter, r *http.Request) {
 		apierror.Write(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"targets": targets})
+	apierror.JSON(w, http.StatusOK, map[string]any{"targets": targets})
 }
 
 func (h *Handlers) create(w http.ResponseWriter, r *http.Request) {
@@ -46,7 +46,7 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) {
 		apierror.Write(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, application.TargetView{Target: t, Latency: []domain.LatencyPoint{}})
+	apierror.JSON(w, http.StatusCreated, application.TargetView{Target: t, Latency: []domain.LatencyPoint{}})
 }
 
 func (h *Handlers) remove(w http.ResponseWriter, r *http.Request) {
@@ -55,10 +55,4 @@ func (h *Handlers) remove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
-}
-
-func writeJSON(w http.ResponseWriter, status int, body any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(body)
 }

@@ -271,12 +271,6 @@ const (
 	IncidentOther  IncidentKind = "other"
 )
 
-// RKN deadlines for a personal-data leak (152-ФЗ ст. 21 ч. 3.1), counted from detection.
-const (
-	RKNPrimaryDeadline = 24 * time.Hour
-	RKNFinalDeadline   = 72 * time.Hour
-)
-
 // Incident is one record the operator keeps by hand.
 type Incident struct {
 	ID              string       `json:"id"`

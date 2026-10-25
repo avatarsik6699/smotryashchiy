@@ -1,11 +1,9 @@
 package http
 
 import (
-	"net"
 	"net/http"
 	"net/netip"
 	"slices"
-	"strings"
 	"sync"
 	"time"
 
@@ -45,28 +43,7 @@ func (l *loginLimiter) clientKey(r *http.Request) string {
 }
 
 func (l *loginLimiter) clientIP(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		host = r.RemoteAddr
-	}
-	peer, err := netip.ParseAddr(host)
-	if err != nil || !l.isTrusted(peer) {
-		return host
-	}
-	forwarded := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-For"), ",")[0])
-	if address, err := netip.ParseAddr(forwarded); err == nil {
-		return address.String()
-	}
-	return host
-}
-
-func (l *loginLimiter) isTrusted(address netip.Addr) bool {
-	for _, prefix := range l.trustedProxies {
-		if prefix.Contains(address) {
-			return true
-		}
-	}
-	return false
+	return ratelimit.ClientIP(r, l.trustedProxies)
 }
 
 func (l *loginLimiter) retryAfter(client string) (time.Duration, bool) {

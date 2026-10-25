@@ -2,6 +2,9 @@ package ratelimit
 
 import (
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"net/netip"
 	"testing"
 	"time"
 )
@@ -73,5 +76,31 @@ func TestClientKeyGroupsIPv6ByPrefix64(t *testing.T) {
 	l := New(time.Hour, 1)
 	if !l.Allow(ClientKey("2001:db8:1:2::1")) || l.Allow(ClientKey("2001:db8:1:2::2")) {
 		t.Fatal("two addresses in one /64 must share a bucket")
+	}
+}
+
+func TestClientIPTrustsForwardedOnlyFromProxy(t *testing.T) {
+	trusted := []netip.Prefix{netip.MustParsePrefix("10.0.0.0/8")}
+	request := func(remote, forwarded string) *http.Request {
+		r := httptest.NewRequest(http.MethodPost, "/api/enroll", nil)
+		r.RemoteAddr = remote
+		if forwarded != "" {
+			r.Header.Set("X-Forwarded-For", forwarded)
+		}
+		return r
+	}
+	cases := []struct{ remote, forwarded, want string }{
+		{"10.1.2.3:4000", "203.0.113.7, 10.1.2.3", "203.0.113.7"},
+		{"198.51.100.9:4000", "203.0.113.7", "198.51.100.9"},
+		{"10.1.2.3:4000", "not-an-address", "10.1.2.3"},
+		{"10.1.2.3:4000", "", "10.1.2.3"},
+	}
+	for _, c := range cases {
+		if got := ClientIP(request(c.remote, c.forwarded), trusted); got != c.want {
+			t.Errorf("ClientIP(%s, %q) = %s, want %s", c.remote, c.forwarded, got, c.want)
+		}
+	}
+	if got := ClientIP(request("10.1.2.3:4000", "203.0.113.7"), nil); got != "10.1.2.3" {
+		t.Errorf("without trusted proxies ClientIP = %s, want the peer", got)
 	}
 }

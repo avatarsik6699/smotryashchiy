@@ -9,7 +9,7 @@
 | Change | `37` |
 | Slug | `analytics-dashboard` |
 | Title | Analytics dashboard: KPIs, trend with comparison, breakdown panels, filters |
-| Status | `active` |
+| Status | `archived` |
 | Branch | `feature/37-analytics-dashboard` |
 
 ---

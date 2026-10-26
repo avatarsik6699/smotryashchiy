@@ -13,6 +13,8 @@ import (
 	"path"
 	"strings"
 	"time"
+
+	"github.com/avatarsik6699/smotryashchiy/internal/platform/httpserver"
 )
 
 // zeroTime disables Last-Modified/If-Modified-Since: embedded files carry no meaningful mtime, and
@@ -67,6 +69,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := strings.TrimPrefix(clean, "/")
+	if ext := path.Ext(name); ext == ".br" || ext == ".gz" {
+		http.NotFound(w, r) // precompressed variants are chosen by Accept-Encoding, never requested
+		return
+	}
 	if name != "" {
 		if h.serveFile(w, r, name) {
 			return
@@ -79,16 +85,44 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.serveIndex(w, r)
 }
 
+// encodings are the precompressed variants the build writes next to a file (web/vite.config.ts),
+// best first.
+var encodings = []struct{ coding, ext string }{{"br", ".br"}, {"gzip", ".gz"}}
+
+// open returns name, or its precompressed variant the client accepts (Change 38), with the
+// Content-Encoding and Vary headers that choice needs.
+func (h *handler) open(w http.ResponseWriter, r *http.Request, name string) (fs.File, error) {
+	accept := r.Header.Get("Accept-Encoding")
+	varies := false
+	for _, e := range encodings {
+		if _, err := fs.Stat(h.fsys, name+e.ext); err != nil {
+			continue
+		}
+		varies = true
+		if !httpserver.AcceptsEncoding(accept, e.coding) {
+			continue
+		}
+		if f, err := h.fsys.Open(name + e.ext); err == nil {
+			w.Header().Set("Content-Encoding", e.coding)
+			w.Header().Add("Vary", "Accept-Encoding")
+			return f, nil
+		}
+	}
+	if varies {
+		w.Header().Add("Vary", "Accept-Encoding")
+	}
+	return h.fsys.Open(name)
+}
+
 func (h *handler) serveFile(w http.ResponseWriter, r *http.Request, name string) bool {
-	f, err := h.fsys.Open(name)
+	if info, err := fs.Stat(h.fsys, name); err != nil || info.IsDir() {
+		return false
+	}
+	f, err := h.open(w, r, name)
 	if err != nil {
 		return false
 	}
 	defer f.Close()
-	info, err := f.Stat()
-	if err != nil || info.IsDir() {
-		return false
-	}
 	cache := cacheRevalidate
 	if strings.HasPrefix(name, "assets/") {
 		cache = cacheImmutable
@@ -104,10 +138,12 @@ func (h *handler) serveFile(w http.ResponseWriter, r *http.Request, name string)
 func (h *handler) serveIndex(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", cacheRevalidate)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if f, err := h.fsys.Open("index.html"); err == nil {
-		defer f.Close()
-		serveSeekable(w, r, "index.html", f)
-		return
+	if _, err := fs.Stat(h.fsys, "index.html"); err == nil {
+		if f, err := h.open(w, r, "index.html"); err == nil {
+			defer f.Close()
+			serveSeekable(w, r, "index.html", f)
+			return
+		}
 	}
 	http.ServeContent(w, r, "index.html", zeroTime, bytes.NewReader(h.fallback))
 }

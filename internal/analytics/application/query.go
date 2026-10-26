@@ -32,6 +32,7 @@ type QueryRepository interface {
 	ListSites(ctx context.Context) ([]domain.Site, error)
 	SiteExists(ctx context.Context, id string) (domain.Site, bool, error)
 	RawRows(ctx context.Context, siteID, dimension string, from, to time.Time, filters []domain.Filter) ([]domain.Row, error)
+	RawTopRows(ctx context.Context, siteID, dimension string, from, to time.Time, filters []domain.Filter, metric string, limit int) ([]domain.Row, error)
 	RawVisits(ctx context.Context, siteID string, from, to time.Time, filters []domain.Filter) ([]domain.TimelineVisit, error)
 	DailyRows(ctx context.Context, siteID, dimension string, from, to domain.Day) ([]domain.Row, error)
 	DailyTotals(ctx context.Context, siteID string, from, to domain.Day) ([]domain.Row, error)
@@ -171,13 +172,14 @@ func (q *Queries) Query(ctx context.Context, siteID string, query domain.Query) 
 		return result, nil
 	}
 
-	cur, err := q.breakdown(ctx, site, r, query.Dimension, query.Filters)
+	// the current period may be cut in the database; the comparison needs every value it matches
+	cur, err := q.breakdown(ctx, site, r, query.Dimension, query.Filters, &topCut{metric: query.OrderBy, limit: query.Limit})
 	if err != nil {
 		return domain.QueryResult{}, deadline(err)
 	}
 	var prev map[string]domain.Counts
 	if comparing {
-		rows, err := q.breakdown(ctx, site, cmp, query.Dimension, query.Filters)
+		rows, err := q.breakdown(ctx, site, cmp, query.Dimension, query.Filters, nil)
 		if err != nil {
 			return domain.QueryResult{}, deadline(err)
 		}
@@ -249,7 +251,13 @@ func (q *Queries) split(r domain.Range, loc *time.Location) (agg, raw *domain.Ra
 	return &domain.Range{From: r.From, To: from.AddDays(-1)}, &domain.Range{From: from, To: r.To}
 }
 
-func (q *Queries) breakdown(ctx context.Context, site domain.Site, r domain.Range, dimension string, filters []domain.Filter) ([]domain.Row, error) {
+// topCut asks a raw-only breakdown for its first rows by a metric (Change 38).
+type topCut struct {
+	metric string
+	limit  int
+}
+
+func (q *Queries) breakdown(ctx context.Context, site domain.Site, r domain.Range, dimension string, filters []domain.Filter, top *topCut) ([]domain.Row, error) {
 	loc := site.Location()
 	agg, raw := q.split(r, loc)
 	sums := map[string]domain.Counts{}
@@ -271,7 +279,13 @@ func (q *Queries) breakdown(ctx context.Context, site domain.Site, r domain.Rang
 	}
 	if raw != nil {
 		start, end := raw.Bounds(loc)
-		rows, err := q.repo.RawRows(ctx, site.ID, dimension, start, end, filters)
+		var rows []domain.Row
+		var err error
+		if agg == nil && top != nil && dimension != "" {
+			rows, err = q.repo.RawTopRows(ctx, site.ID, dimension, start, end, filters, top.metric, top.limit)
+		} else {
+			rows, err = q.repo.RawRows(ctx, site.ID, dimension, start, end, filters)
+		}
 		if err != nil {
 			return nil, err
 		}

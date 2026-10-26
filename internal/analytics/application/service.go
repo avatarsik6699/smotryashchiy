@@ -70,7 +70,18 @@ type Service struct {
 
 	countsMu sync.Mutex
 	counts   map[string]int64
+
+	// Change 38: every beacon needs the site list and the salt base. Both are cached: the salt
+	// base never changes once stored, the list changes only through CreateSite and DeleteSite
+	// (which reset it) and is reloaded after sitesTTL in any case.
+	cacheMu  sync.Mutex
+	sites    []domain.Site
+	sitesAt  time.Time
+	saltBase string
 }
+
+// sitesTTL bounds how long the cached site list is trusted.
+const sitesTTL = time.Minute
 
 // NewService wires the service.
 func NewService(repo Repository, now func() time.Time, opts Options) *Service {
@@ -105,16 +116,47 @@ func (s *Service) CreateSite(ctx context.Context, n domain.NewSite) (domain.Site
 	if err != nil {
 		return domain.Site{}, err
 	}
+	defer s.resetSites()
 	return s.repo.CreateSite(ctx, valid, s.now())
 }
 
 // Sites lists every tracked site.
 func (s *Service) Sites(ctx context.Context) ([]domain.Site, error) {
-	return s.repo.ListSites(ctx)
+	s.cacheMu.Lock()
+	defer s.cacheMu.Unlock()
+	if s.sites == nil || s.now().Sub(s.sitesAt) >= sitesTTL || s.now().Before(s.sitesAt) {
+		sites, err := s.repo.ListSites(ctx)
+		if err != nil {
+			return nil, err
+		}
+		s.sites, s.sitesAt = sites, s.now()
+	}
+	return append([]domain.Site(nil), s.sites...), nil
+}
+
+// site finds a tracked site in the cached list.
+func (s *Service) site(ctx context.Context, id string) (domain.Site, bool, error) {
+	sites, err := s.Sites(ctx)
+	if err != nil {
+		return domain.Site{}, false, err
+	}
+	for _, site := range sites {
+		if site.ID == id {
+			return site, true, nil
+		}
+	}
+	return domain.Site{}, false, nil
+}
+
+func (s *Service) resetSites() {
+	s.cacheMu.Lock()
+	s.sites = nil
+	s.cacheMu.Unlock()
 }
 
 // DeleteSite removes a site and its pageviews.
 func (s *Service) DeleteSite(ctx context.Context, id string) error {
+	defer s.resetSites()
 	return s.repo.DeleteSite(ctx, id)
 }
 
@@ -138,7 +180,7 @@ func (s *Service) collect(ctx context.Context, b domain.Beacon, clientIP, userAg
 	if isBotUA(userAgent) {
 		return false, OutcomeBot, nil
 	}
-	site, found, err := s.repo.SiteExists(ctx, b.Site)
+	site, found, err := s.site(ctx, b.Site)
 	if err != nil {
 		return false, OutcomeError, err
 	}
@@ -203,7 +245,7 @@ func OriginMatchesSite(originHost, siteDomain string) bool {
 // day is the site's local date (Change 35), so a visitor's day and the report's day agree. The
 // raw IP is used only for this one computation and is never stored.
 func (s *Service) visitorHash(ctx context.Context, site domain.Site, ip, ua string, now time.Time) (string, error) {
-	base, err := s.repo.DailySaltBase(ctx)
+	base, err := s.dailySaltBase(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -211,6 +253,20 @@ func (s *Service) visitorHash(ctx context.Context, site domain.Site, ip, ua stri
 	daily := sha256.Sum256([]byte(base + "|" + day))
 	visitor := sha256.Sum256([]byte(hex.EncodeToString(daily[:]) + "|" + site.ID + "|" + ip + "|" + ua))
 	return hex.EncodeToString(visitor[:16]), nil
+}
+
+// dailySaltBase is the stored salt secret, read once (it never changes after it is generated).
+func (s *Service) dailySaltBase(ctx context.Context) (string, error) {
+	s.cacheMu.Lock()
+	defer s.cacheMu.Unlock()
+	if s.saltBase == "" {
+		base, err := s.repo.DailySaltBase(ctx)
+		if err != nil {
+			return "", err
+		}
+		s.saltBase = base
+	}
+	return s.saltBase, nil
 }
 
 // Purge deletes pageviews and visits older than the retention window, in bounded batches.

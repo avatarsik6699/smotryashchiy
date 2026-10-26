@@ -126,10 +126,12 @@ func boolInt(b bool) int {
 // Latest returns the newest result of every target that has one.
 func (s *Store) Latest(ctx context.Context) (map[string]domain.Result, error) {
 	rows, err := s.db.QueryContext(ctx,
+		// One primary-key seek per target (Change 38) instead of grouping every stored result;
+		// CROSS JOIN pins the targets as the outer loop.
 		`SELECT r.target_id, r.ts, r.ok, r.latency_ms, r.status_code, r.error, r.cert_expires_at
-		 FROM uptime_results r
-		 JOIN (SELECT target_id, MAX(ts) AS ts FROM uptime_results GROUP BY target_id) l
-		   ON r.target_id = l.target_id AND r.ts = l.ts`)
+		 FROM uptime_targets t
+		 CROSS JOIN uptime_results r ON r.target_id = t.id
+		  AND r.ts = (SELECT MAX(ts) FROM uptime_results WHERE target_id = t.id)`)
 	if err != nil {
 		return nil, fmt.Errorf("uptime: latest results: %w", err)
 	}

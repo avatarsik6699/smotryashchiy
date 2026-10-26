@@ -13,6 +13,8 @@ type fakeRepo struct {
 	pageviews []domain.Pageview
 	visits    []domain.Visit // the visit each pageview was recorded with
 	salt      string
+	listCalls int
+	saltCalls int
 }
 
 func newFakeRepo() *fakeRepo {
@@ -25,6 +27,7 @@ func (f *fakeRepo) CreateSite(_ context.Context, n domain.NewSite, now time.Time
 	return s, nil
 }
 func (f *fakeRepo) ListSites(context.Context) ([]domain.Site, error) {
+	f.listCalls++
 	out := make([]domain.Site, 0, len(f.sites))
 	for _, s := range f.sites {
 		out = append(out, s)
@@ -41,7 +44,10 @@ func (f *fakeRepo) RecordPageview(_ context.Context, p domain.Pageview, v domain
 	f.visits = append(f.visits, v)
 	return nil
 }
-func (f *fakeRepo) DailySaltBase(context.Context) (string, error)               { return f.salt, nil }
+func (f *fakeRepo) DailySaltBase(context.Context) (string, error) {
+	f.saltCalls++
+	return f.salt, nil
+}
 func (f *fakeRepo) PurgePageviews(context.Context, time.Time, int) (int, error) { return 0, nil }
 
 func TestCollectStoresAValidBeacon(t *testing.T) {
@@ -288,5 +294,31 @@ func TestUAVersions(t *testing.T) {
 		if b != c.wantBrowser || o != c.wantOS {
 			t.Errorf("uaVersions(%q) = %q, %q; want %q, %q", c.ua, b, o, c.wantBrowser, c.wantOS)
 		}
+	}
+}
+
+// Change 38: beacons read the site list and the salt base from memory; creating or deleting a site
+// resets the list.
+func TestCollectCachesSitesAndSalt(t *testing.T) {
+	repo := newFakeRepo()
+	now := time.Date(2026, 10, 26, 12, 0, 0, 0, time.UTC)
+	svc := NewService(repo, func() time.Time { return now }, Options{})
+	site, err := svc.CreateSite(context.Background(), domain.NewSite{Name: "A", Domain: "a.example"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 3 {
+		if ok, err := svc.Collect(context.Background(), domain.Beacon{Site: site.ID, URL: "/"}, "1.2.3.4", "Mozilla/5.0 Chrome/131", "a.example"); err != nil || !ok {
+			t.Fatalf("collect = %v %v", ok, err)
+		}
+	}
+	if repo.listCalls != 1 || repo.saltCalls != 1 {
+		t.Fatalf("list %d, salt %d reads; want one each", repo.listCalls, repo.saltCalls)
+	}
+	if err := svc.DeleteSite(context.Background(), site.ID); err != nil {
+		t.Fatal(err)
+	}
+	if ok, _ := svc.Collect(context.Background(), domain.Beacon{Site: site.ID, URL: "/"}, "1.2.3.4", "Mozilla/5.0 Chrome/131", "a.example"); ok {
+		t.Fatal("a deleted site must not count")
 	}
 }

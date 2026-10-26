@@ -100,3 +100,27 @@ func runRestore(args []string, stdin io.Reader, stdout io.Writer) error {
 	fmt.Fprintln(stdout, "start the server again to use it")
 	return nil
 }
+
+// runVacuum compacts the stopped server's database (Change 38).
+func runVacuum(args []string, stdout io.Writer) error {
+	fs := flag.NewFlagSet("admin vacuum", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	keep := fs.Bool("keep", false, "keep the replaced database file next to the new one")
+	if err := fs.Parse(args); err != nil || fs.NArg() != 0 {
+		return errors.New(adminUsage)
+	}
+	cfg, err := config.Load(release)
+	if err != nil {
+		return err
+	}
+	res, err := backup.Vacuum(context.Background(), cfg.DBPath, *keep, time.Now())
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(stdout, "vacuumed %s: %d MB -> %d MB\n", cfg.DBPath, res.Before>>20, res.After>>20)
+	if res.PreviousDB != "" {
+		fmt.Fprintf(stdout, "the previous database was kept at %s\n", res.PreviousDB)
+	}
+	fmt.Fprintln(stdout, "start the server again to use it")
+	return nil
+}

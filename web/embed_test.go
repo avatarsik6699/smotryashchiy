@@ -118,3 +118,49 @@ func TestEmbeddedHandlerBuildsAndServesSomething(t *testing.T) {
 		t.Fatalf("embedded / = %d, %d bytes", rec.Code, rec.Body.Len())
 	}
 }
+
+// Change 38: a precompressed variant is chosen by Accept-Encoding, brotli first.
+func TestPrecompressedVariantsFollowAcceptEncoding(t *testing.T) {
+	h := newHandler(fstest.MapFS{
+		"index.html":           {Data: []byte("<html>app</html>")},
+		"index.html.gz":        {Data: []byte("GZ-INDEX")},
+		"assets/app-1a.js":     {Data: []byte("console.log(1)")},
+		"assets/app-1a.js.br":  {Data: []byte("BR")},
+		"assets/app-1a.js.gz":  {Data: []byte("GZ")},
+		"assets/plain-1a.json": {Data: []byte("{}")},
+	}, nil)
+	get := func(target, accept string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, target, nil)
+		if accept != "" {
+			req.Header.Set("Accept-Encoding", accept)
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+	for _, c := range []struct{ target, accept, body, coding string }{
+		{"/assets/app-1a.js", "gzip, deflate, br", "BR", "br"},
+		{"/assets/app-1a.js", "gzip", "GZ", "gzip"},
+		{"/assets/app-1a.js", "br;q=0, gzip", "GZ", "gzip"},
+		{"/assets/app-1a.js", "", "console.log(1)", ""},
+		{"/", "br, gzip", "GZ-INDEX", "gzip"},
+		{"/deep/link", "gzip", "GZ-INDEX", "gzip"},
+	} {
+		rec := get(c.target, c.accept)
+		if rec.Body.String() != c.body || rec.Header().Get("Content-Encoding") != c.coding {
+			t.Errorf("%s with %q = %q encoding %q, want %q %q", c.target, c.accept, rec.Body.String(), rec.Header().Get("Content-Encoding"), c.body, c.coding)
+		}
+		if rec.Header().Get("Vary") != "Accept-Encoding" {
+			t.Errorf("%s with %q: Vary = %q", c.target, c.accept, rec.Header().Get("Vary"))
+		}
+	}
+	if js := get("/assets/app-1a.js", "br"); !strings.Contains(js.Header().Get("Content-Type"), "javascript") {
+		t.Errorf("a brotli body keeps the file's type, got %q", js.Header().Get("Content-Type"))
+	}
+	if plain := get("/assets/plain-1a.json", "br"); plain.Header().Get("Vary") != "" || plain.Header().Get("Content-Encoding") != "" {
+		t.Errorf("a file without variants varies on nothing: %v", plain.Header())
+	}
+	if direct := get("/assets/app-1a.js.br", "br"); direct.Code != http.StatusNotFound {
+		t.Errorf("a variant requested by name = %d, want 404", direct.Code)
+	}
+}

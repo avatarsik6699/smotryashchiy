@@ -3,24 +3,9 @@
 // callouts next to each lesson come from guide/live.ts.
 
 import { THRESHOLDS } from "../domain/health";
+import type { LessonId } from "./lessonIds";
 
-export type LessonId =
-  | "how-it-works"
-  | "daily-check"
-  | "status"
-  | "cpu"
-  | "load"
-  | "memory"
-  | "disk"
-  | "network"
-  | "containers"
-  | "checks"
-  | "events"
-  | "uptime"
-  | "backups"
-  | "analytics"
-  | "operator"
-  | "triage";
+export type { LessonId };
 
 export interface Lesson {
   id: LessonId;

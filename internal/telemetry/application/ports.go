@@ -43,7 +43,9 @@ const (
 type EventQuery struct {
 	HostID string
 	Level  string
-	Limit  int
+	// From, when set, keeps events at or after it (Change 38: the dashboard asks for its hour).
+	From  *time.Time
+	Limit int
 }
 
 // CheckQuery selects the newest Check per host and name.

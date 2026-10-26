@@ -167,3 +167,53 @@ describe('DashboardStore.handleFrame', () => {
     expect(fetchMock.mock.calls.filter((c) => String(c[0]) === '/api/hosts')).toHaveLength(1)
   })
 })
+
+describe('Change 38: rendering and polling', () => {
+  const frame = (v: number) => ({ type: 'metric' as const, host_id: 'a', record: { host: 'a', name: 'cpu.usage_percent', ts: new Date(NOW + v * 1000).toISOString(), value: v, labels: {} } })
+
+  it('publishes a burst of stream frames once', async () => {
+    routeAll()
+    const queued: (() => void)[] = []
+    const store = new DashboardStore(() => NOW, (publish) => queued.push(publish))
+    await store.load()
+    const listener = vi.fn()
+    store.subscribe(listener)
+    const before = store.getSnapshot()
+    for (let i = 1; i <= 20; i++) store.handleFrame(frame(i))
+    expect(listener).not.toHaveBeenCalled()
+    expect(store.getSnapshot()).toBe(before)
+    expect(queued).toHaveLength(1)
+    queued[0]!()
+    expect(listener).toHaveBeenCalledTimes(1)
+    expect(store.getSnapshot().hosts[0]!.series.get('cpu.usage_percent')!.points).toHaveLength(20)
+  })
+
+  it('asks only for the last hour of error events', async () => {
+    routeAll()
+    await new DashboardStore(() => NOW).load()
+    const levels = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.includes('level='))
+    expect(levels).toHaveLength(2)
+    for (const u of levels) expect(decodeURIComponent(u)).toContain(`from=${new Date(NOW - 3_600_000).toISOString()}`)
+  })
+
+  it('skips refreshes while the tab is hidden and catches up once when shown', async () => {
+    vi.useFakeTimers()
+    routeAll()
+    let hidden = false
+    const spy = vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden)
+    const store = new DashboardStore(() => NOW)
+    store.start()
+    await vi.advanceTimersByTimeAsync(0)
+    const loads = () => fetchMock.mock.calls.filter((c) => String(c[0]) === '/api/hosts').length
+    const first = loads()
+    hidden = true
+    await vi.advanceTimersByTimeAsync(180_000)
+    expect(loads()).toBe(first)
+    hidden = false
+    document.dispatchEvent(new Event('visibilitychange'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(loads()).toBe(first + 1)
+    store.stop()
+    spy.mockRestore()
+  })
+})

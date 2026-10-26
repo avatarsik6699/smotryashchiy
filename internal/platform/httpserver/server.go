@@ -10,6 +10,10 @@ import (
 	"time"
 )
 
+// idleTimeout closes keep-alive connections nobody uses (Change 38); a hijacked WebSocket is not
+// affected.
+const idleTimeout = 2 * time.Minute
+
 // Server wraps the shared mux and the net/http server that serves it.
 type Server struct {
 	Mux        *http.ServeMux
@@ -49,6 +53,7 @@ func (s *Server) Serve() error {
 		Addr:              s.addr,
 		Handler:           s.chained(),
 		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       idleTimeout,
 	}
 	if err := s.httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
@@ -67,6 +72,7 @@ func (s *Server) ServeHTTPS(addr string, tlsConfig *tls.Config) error {
 		Handler:           withHSTS(s.chained()),
 		TLSConfig:         tlsConfig,
 		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       idleTimeout,
 	}
 	// The cert/key args are empty: certificates come from tlsConfig.GetCertificate (certmagic).
 	if err := s.httpServer.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {

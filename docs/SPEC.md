@@ -154,13 +154,24 @@ duplicate points do not. Deleting the cached point during retention selects the 
 point, or removes the cache row when none remains. Host deletion removes its cache rows. The table
 never extends the raw TTL, changes rollups, or changes the public response contract.
 
+Change 38 keeps the other repeated reads bounded the same way: `check_latest` holds the newest check
+per (host, name) under the same trigger rules, error and critical events have a `(level, ts)` index,
+and the newest uptime result is one primary-key seek per target.
+
+**Connections (Change 38).** The server opens a pool of four SQLite connections: WAL readers run
+beside the writer, so a screen never queues behind an ingest, a purge or a rollup. Transactions begin
+`IMMEDIATE`, so writers take turns through `busy_timeout` (10 s) instead of failing. Pragmas per
+connection: `synchronous=NORMAL` (durable across a crash of the process; a power loss can drop the
+last commits), a 32 MB page cache and a 128 MB memory map. `PRAGMA optimize` (bounded analysis)
+runs at start-up and daily, so the planner has statistics.
+
 ### 4.3 Read API (session required, read-only)
 
 | Verb | Path | Behavior |
 |------|------|----------|
-| GET | `/api/metrics?host=&name=&from=&to=&limit=&latest=&step=` | time series ordered by `ts` ascending, `limit` default 1000, max 5000; `latest=true` returns the newest point per (name, labels) and is incompatible with `from`/`to`; `step=N` (10–3600 s, raw resolution only, incompatible with `latest`) keeps only the newest sample of every N-second bucket per series (a sampled series, valid for gauges and counters alike) |
+| GET | `/api/metrics?host=&name=&from=&to=&limit=&latest=&step=` | time series ordered by `ts` ascending, `limit` default 1000, max 5000 (a limit keeps the newest samples, Change 38); `latest=true` returns the newest point per (name, labels) and is incompatible with `from`/`to`; `step=N` (10–3600 s, raw resolution only, incompatible with `latest`) keeps only the newest sample of every N-second bucket per series (a sampled series, valid for gauges and counters alike) |
 | GET | `/api/checks?host=&name=` | newest Check per (host, name) |
-| GET | `/api/events?host=&level=&limit=` | newest first, `limit` default 100, max 500 |
+| GET | `/api/events?host=&level=&from=&limit=` | newest first, `limit` default 100, max 500; `from` (RFC 3339, Change 38) keeps events at or after it |
 
 `GET /api/metrics` gains `resolution=raw|hour` (default `raw`). `hour` reads rollups (§4.4), returns
 `{"rollups":[{host, name, labels, ts, count, min, max, avg}]}`, one per point (`ts` = hour start, UTC), and is the only resolution that
@@ -178,7 +189,8 @@ Zero is a value: a stored `0` contributes to `count`, `min`, `max` and `sum`.
 ### 4.5 Retention (Change 03)
 
 Raw metrics, checks and events: 30 days. Hourly rollups: 13 months. Enforced by a purge job run at
-start-up and daily, deleting in bounded batches so the single SQLite writer is never blocked for long.
+start-up and hourly (daily until Change 38), deleting in bounded batches with a 50 ms pause between
+them so ingest commits interleave with a long purge.
 A raw row is deleted only after its hour has been rolled up. `ingestion_batches` are purged with the
 raw TTL. TTLs are configurable (`SMOTRYASHCHIY_RAW_RETENTION_DAYS`,
 `SMOTRYASHCHIY_ROLLUP_RETENTION_DAYS`); non-positive or unparsable values fail start-up.
@@ -294,6 +306,11 @@ All routes below except static assets require the session cookie.
   never needs node. Paths not under `/api/` and not a
   health probe are public static content (no secrets live in the bundle): `/` and unknown non-file paths
   return `index.html` (SPA fallback, `no-cache`), `/assets/*` are content-hashed (`immutable`, 1 year).
+- **Compression (Change 38).** The build writes a brotli and a gzip variant next to every text file
+  of at least 1 KB; the server sends the best one `Accept-Encoding` admits, with `Vary:
+  Accept-Encoding`, and refuses requests for the variants by name. Other responses — API JSON,
+  `/track.js` — are gzipped on the fly from 1 KB, except WebSocket upgrades, range requests, `HEAD` and
+  anything already encoded. Idle keep-alive connections close after 2 minutes.
   Everything under `/api/` keeps §3's rules: session required except `POST /api/auth/login`,
   `GET /api/auth/session` and `POST /api/enroll`. Unknown `/api/*` paths answer `401`/`404` JSON, never `index.html`.
 - **Cross-origin write guard (Change 19).** `SameSite=Lax` does not stop a *same-site* page (any
@@ -315,7 +332,10 @@ All routes below except static assets require the session cookie.
   `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`.
 - **Frontend gates.** Fast Gate adds `npm run typecheck`; Full Gate adds `npm ci`, typecheck, unit
   tests (with component-level axe checks) and the production build (before `go build`), plus a bundle
-  budget of 200 KB gzip for JavaScript.
+  budget in brotli bytes, what the server sends: the entry chunk with its preloads (the sign-in
+  screen) at most 80 KB and all JavaScript at most 200 KB (Change 38; until then 200 KB gzip of one
+  bundle). The sign-in screen loads without the dashboard, and Analytics, Sales, Operator, the guide,
+  the dialogs and the lesson texts of the `?` popovers load on first use.
 
 ## 4e. Uptime prober (Change 08)
 
@@ -371,6 +391,10 @@ The server probes operator-defined **targets** itself; nothing runs on the monit
   `PRAGMA integrity_check` is `ok` and that the bundle's migration count is not newer than the binary's, then
   atomically replaces the database. It refuses to touch an existing non-empty database without `--force`, and
   refuses while the database is locked by a running server. Off-host copying stays the operator's job.
+  `smotryashchiy admin vacuum [--keep]` (Change 38) compacts a **stopped** server's database: `VACUUM
+  INTO` a new file beside it (on disk, so it needs free space about the database's size), `PRAGMA
+  quick_check` of the copy, the same rename swap as restore, then `PRAGMA optimize`. The replaced file
+  is removed unless `--keep`; it refuses while a server holds the database.
 - **Off-host backup recipe (Change 29).** `deploy/backup/` ships a host script and systemd
   units for the Docker host: daily, `admin backup --out -` streams into an encrypted Restic repository
   (pinned `restic/restic` image; any Restic backend, S3 in the reference deployment) with `forget
@@ -725,6 +749,14 @@ every argument, the site mails the student on every measure, and every request i
 in the change that introduces them.
 
 ## 5. UI
+
+**Rendering and polling (Change 38).** Stream frames update the store at once but reach the screen
+once per animation frame, so an agent batch of dozens of metrics renders once and a hidden tab
+renders nothing until it is shown. Charts redraw only when their points change. Ages tick every 5 s on
+Monitoring and in the guide, every minute elsewhere, and not at all in a hidden tab. The full refresh
+(every 60 s), the documents views and the analytics current-visitors count skip their polls while the
+tab is hidden and catch up once when it is shown. Error and critical events are requested for the
+last hour only.
 
 **Guide, help and health assessment (Change 22, architect decision 2026-09-23).** Several rules
 below change:

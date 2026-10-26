@@ -28,37 +28,86 @@ type Listener = () => void
  * subscribe/getSnapshot (useSyncExternalStore). Loading is a full refresh; the stream applies
  * incremental frames in between.
  */
+/**
+ * Schedules a published snapshot: the next animation frame, so a burst of stream frames (an agent
+ * batch is dozens of metrics) renders once, and a hidden tab renders not at all until it is shown
+ * (Change 38). Without animation frames (tests, old engines) a short timer does the same.
+ */
+const defaultSchedule = (publish: () => void): void => {
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(publish)
+  else setTimeout(publish, 16)
+}
+
+const isHidden = (): boolean => typeof document !== 'undefined' && document.hidden
+
 export class DashboardStore {
   private state: DashboardState = initialState
+  /** What subscribers read: the state as of the last publish. */
+  private published: DashboardState = initialState
+  private publishQueued = false
   private listeners = new Set<Listener>()
   private loading: Promise<void> | null = null
   private refreshTimer: ReturnType<typeof setInterval> | null = null
   private hostRefreshQueued = false
 
-  constructor(private readonly now: () => number = Date.now) {}
+  constructor(
+    private readonly now: () => number = Date.now,
+    private readonly schedule: (publish: () => void) => void = defaultSchedule,
+  ) {}
 
   subscribe = (listener: Listener): (() => void) => {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
   }
 
-  getSnapshot = (): DashboardState => this.state
+  getSnapshot = (): DashboardState => this.published
 
-  private set(next: DashboardState) {
+  /** Replaces the state; loads publish at once, stream frames wait for the next scheduled publish. */
+  private set(next: DashboardState, deferred = false) {
     if (next === this.state) return
     this.state = next
+    if (!deferred) {
+      this.publish()
+      return
+    }
+    if (this.publishQueued) return
+    this.publishQueued = true
+    this.schedule(() => this.publish())
+  }
+
+  private publish = () => {
+    this.publishQueued = false
+    if (this.published === this.state) return
+    this.published = this.state
     for (const l of this.listeners) l()
   }
 
-  /** Starts the periodic refresh and performs the first load. */
+  /**
+   * Starts the periodic refresh and performs the first load. A hidden tab skips its refreshes and
+   * catches up once when it is shown again (Change 38: background tabs kept polling every minute).
+   */
   start(): void {
     void this.load()
-    if (this.refreshTimer === null) this.refreshTimer = setInterval(() => void this.load(), REFRESH_INTERVAL_MS)
+    if (this.refreshTimer !== null) return
+    this.refreshTimer = setInterval(() => {
+      if (isHidden()) this.missedRefresh = true
+      else void this.load()
+    }, REFRESH_INTERVAL_MS)
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', this.onVisibility)
   }
 
   stop(): void {
     if (this.refreshTimer !== null) clearInterval(this.refreshTimer)
     this.refreshTimer = null
+    if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', this.onVisibility)
+  }
+
+  private missedRefresh = false
+
+  private onVisibility = () => {
+    if (isHidden() || !this.missedRefresh) return
+    this.missedRefresh = false
+    void this.load()
   }
 
   /** Full load; concurrent calls share one request set. */
@@ -77,7 +126,8 @@ export class DashboardStore {
         api<{ hosts: HostDTO[] }>('/api/hosts'),
         api<{ metrics: MetricDTO[] }>(`/api/metrics?latest=true&limit=${METRIC_LIMIT}`),
         api<{ events: EventDTO[] }>(`/api/events?limit=${MAX_EVENTS}`),
-        Promise.all(ERROR_LEVELS.map((level) => api<{ events: EventDTO[] }>(`/api/events?level=${level}&limit=${MAX_ERROR_EVENTS}`))),
+        // Only the last hour counts (Change 38: without `from` a rare level walked all history).
+        Promise.all(ERROR_LEVELS.map((level) => api<{ events: EventDTO[] }>(`/api/events?level=${level}&from=${encodeURIComponent(from)}&limit=${MAX_ERROR_EVENTS}`))),
         api<{ checks: CheckDTO[] }>('/api/checks'),
         api<{ targets: UptimeTargetDTO[] }>('/api/uptime'),
         this.loadHistory(from),
@@ -122,7 +172,7 @@ export class DashboardStore {
   /** Applies one stream frame; a frame from an unknown host schedules a reload to pick the host up. */
   handleFrame(frame: StreamFrame): void {
     const { state, unknownHost } = applyFrame(this.state, frame, this.now())
-    this.set(state)
+    this.set(state, true)
     if (unknownHost && !this.hostRefreshQueued) {
       this.hostRefreshQueued = true
       setTimeout(() => {

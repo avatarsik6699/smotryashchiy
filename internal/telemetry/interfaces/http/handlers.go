@@ -155,7 +155,12 @@ func (h *Handlers) events(w http.ResponseWriter, r *http.Request) {
 		apierror.Write(w, err)
 		return
 	}
-	entries, err := h.service.Events(r.Context(), application.EventQuery{HostID: q.Get("host"), Level: q.Get("level"), Limit: limit})
+	from, err := parseTime(q, "from")
+	if err != nil {
+		apierror.Write(w, err)
+		return
+	}
+	entries, err := h.service.Events(r.Context(), application.EventQuery{HostID: q.Get("host"), Level: q.Get("level"), From: from, Limit: limit})
 	if err != nil {
 		apierror.Write(w, err)
 		return

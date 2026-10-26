@@ -41,7 +41,15 @@ export function Chart({ series, variant, height, kind, format, name, decorative 
   const widthRef = useRef(0)
   const themeKey = useColorSchemeKey()
 
-  const aligned = useMemo(() => alignSeries(series.map((s) => s.points), undefined, series.map((s) => s.gaps ?? [])), [series])
+  // Callers build `series` inline, so its identity changes on every render; the signature changes
+  // only when the points do (Change 38), and the chart realigns and redraws only then.
+  const seriesRef = useRef(series)
+  seriesRef.current = series
+  const signature = seriesSignature(series)
+  const aligned = useMemo(() => {
+    const current = seriesRef.current
+    return alignSeries(current.map((s) => s.points), undefined, current.map((s) => s.gaps ?? []))
+  }, [signature])
   const enough = sampleCount(series.map((s) => s.points)) >= 2
   const max = useMemo(() => Math.max(0, ...series.flatMap((s) => s.points.map((p) => p.v))), [series])
   const rangeRef = useRef<[number, number]>([0, 1])
@@ -264,6 +272,17 @@ function moveTooltip(u: uPlot, box: HTMLElement, tip: HTMLDivElement | null, lab
 }
 
 /** Bumps when the system color scheme changes so the canvas colors are re-read. */
+/** Identifies a series set by what a redraw depends on: labels, lengths, both ends and gaps. */
+export function seriesSignature(series: ChartSeries[]): string {
+  return series
+    .map((s) => {
+      const first = s.points[0]
+      const last = s.points[s.points.length - 1]
+      return `${s.label}\u0001${s.points.length}\u0001${first?.t ?? ''}\u0001${first?.v ?? ''}\u0001${last?.t ?? ''}\u0001${last?.v ?? ''}\u0001${(s.gaps ?? []).join(',')}`
+    })
+    .join('\u0002')
+}
+
 function useColorSchemeKey(): number {
   const [key, setKey] = useState(0)
   useEffect(() => {

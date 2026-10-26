@@ -1,7 +1,10 @@
 import { Button } from '@base-ui/react/button'
+import { lazy, Suspense } from 'react'
 import { Login } from './components/Login/Login'
-import { Dashboard } from './components/Dashboard/Dashboard'
 import { useSession } from './session/useSession'
+
+// Change 38: the sign-in screen does not download the dashboard.
+const Dashboard = lazy(() => import('./components/Dashboard/Dashboard').then((m) => ({ default: m.Dashboard })))
 
 export function App() {
   const session = useSession()
@@ -23,6 +26,16 @@ export function App() {
     case 'anonymous':
       return <Login onLogin={session.login} />
     case 'authenticated':
-      return <Dashboard onLogout={session.logout} />
+      return (
+        <Suspense
+          fallback={
+            <main style={{ padding: 'var(--space-4) var(--page-pad)' }}>
+              <p role="status">loading the dashboard…</p>
+            </main>
+          }
+        >
+          <Dashboard onLogout={session.logout} />
+        </Suspense>
+      )
   }
 }

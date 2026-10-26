@@ -50,7 +50,10 @@ export function useRealtime(siteId: string): number | null {
         () => undefined,
       )
     void load()
-    const timer = setInterval(() => void load(), REALTIME_MS)
+    // A hidden tab does not poll (Change 38); the next tick after it is shown refreshes the count.
+    const timer = setInterval(() => {
+      if (!document.hidden) void load()
+    }, REALTIME_MS)
     return () => {
       clearInterval(timer)
       controller.abort()

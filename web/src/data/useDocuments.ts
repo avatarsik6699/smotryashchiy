@@ -29,10 +29,22 @@ export function useDocuments<T>(kind: string, refreshMs: number, keep?: (doc: T)
           setState((s) => ({ status: s.status === 'ready' ? 'ready' : 'error', error: e instanceof Error ? e.message : 'load failed', documents: s.documents }))
       },
     )
-    const timer = window.setTimeout(() => setKey((k) => k + 1), refreshMs)
+    // A hidden tab waits for the moment it is shown to refresh (Change 38).
+    const refresh = () => setKey((k) => k + 1)
+    let waiting = false
+    const onVisible = () => {
+      if (!document.hidden && waiting) refresh()
+    }
+    const timer = window.setTimeout(() => {
+      if (document.hidden) {
+        waiting = true
+        document.addEventListener('visibilitychange', onVisible)
+      } else refresh()
+    }, refreshMs)
     return () => {
       cancelled = true
       window.clearTimeout(timer)
+      document.removeEventListener('visibilitychange', onVisible)
     }
     // `keep` is a module-level predicate in every caller; the refresh key drives reloads.
   }, [key, kind, refreshMs])

@@ -56,6 +56,7 @@ func runServer(stdout, stderr io.Writer) error {
 	auth := authapp.NewService(authinfra.NewSettingsStore(sqlDB))
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	go db.RunOptimize(ctx, sqlDB)
 	if cfg.Production {
 		if err := auth.RequireAdminPassword(ctx); err != nil {
 			return fmt.Errorf("%w; run `smotryashchiy admin set-password` first", err)

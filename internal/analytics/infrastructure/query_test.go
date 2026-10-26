@@ -322,3 +322,23 @@ func TestRealtimeCountsTheLastFiveMinutes(t *testing.T) {
 		t.Fatalf("realtime = %d (%v), want 2", n, err)
 	}
 }
+
+// Change 38: a raw-only breakdown is cut in the database; the cut keeps the same rows, in the same
+// order, as sorting everything in Go, ties broken by value.
+func TestDatabaseCutMatchesTheFullSort(t *testing.T) {
+	s := newTestStore(t)
+	site := newQuerySite(t, s, "Europe/Moscow")
+	now := time.Date(2026, 10, 26, 12, 0, 0, 0, time.UTC)
+	seedMonth(t, s, site, now)
+	q := application.NewQueries(s, func() time.Time { return now }, 0)
+	month := []string{"2026-09-26", "2026-10-25"}
+	for _, dim := range []string{"page", "channel", "entry_page"} {
+		for _, metric := range []string{"visitors", "visits", "pageviews", "bounce_rate"} {
+			full := mustQuery(t, q, site.ID, domain.Query{Metrics: []string{metric}, Dimension: dim, DateRange: month})
+			cut := mustQuery(t, q, site.ID, domain.Query{Metrics: []string{metric}, Dimension: dim, DateRange: month, Limit: 2})
+			if !reflect.DeepEqual(cut.Rows, full.Rows[:min(2, len(full.Rows))]) {
+				t.Errorf("%s by %s: cut %v, full %v", dim, metric, cut.Rows, full.Rows)
+			}
+		}
+	}
+}

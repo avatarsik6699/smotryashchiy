@@ -21,7 +21,7 @@ import (
 // maxPasswordInput bounds stdin reads (1024-byte limit plus a trailing newline and one probe byte).
 const maxPasswordInput = 1026
 
-const adminUsage = "usage: smotryashchiy admin set-password (password read from stdin) | admin host create --name NAME [--server URL] | admin backup --out FILE|- | admin restore --from FILE|- [--force]"
+const adminUsage = "usage: smotryashchiy admin set-password (password read from stdin) | admin host create --name NAME [--server URL] | admin backup --out FILE|- | admin restore --from FILE|- [--force] | admin vacuum [--keep]"
 
 func runAdmin(args []string, stdin io.Reader, stdout io.Writer) error {
 	if len(args) >= 2 && args[0] == "host" && args[1] == "create" {
@@ -32,6 +32,9 @@ func runAdmin(args []string, stdin io.Reader, stdout io.Writer) error {
 	}
 	if len(args) >= 1 && args[0] == "restore" {
 		return runRestore(args[1:], stdin, stdout)
+	}
+	if len(args) >= 1 && args[0] == "vacuum" {
+		return runVacuum(args[1:], stdout)
 	}
 	if len(args) != 1 || args[0] != "set-password" {
 		return errors.New(adminUsage)

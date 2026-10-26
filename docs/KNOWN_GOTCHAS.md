@@ -418,3 +418,21 @@ Carry these into the first contract tests instead of rediscovering them in produ
 - Related: the refresh script checks the MMDB marker with `LC_ALL=C grep -aF`. Under a UTF-8 locale
   `grep` does not match the raw marker bytes and refuses a valid file.
 
+
+## A plain VACUUM builds its copy in memory (Change 38)
+
+- **Symptom:** a `VACUUM` of the production database could grow the process by the size of the
+  database (half a gigabyte on a 2 GB host).
+- **Cause:** the container's rootfs is read-only, so every connection runs with `temp_store=MEMORY`;
+  a plain `VACUUM` puts its temporary copy there.
+- **Fix:** `admin vacuum` uses `VACUUM INTO` a file next to the database and swaps it in. It needs free
+  disk instead of memory, and the server must be stopped (it refuses otherwise).
+
+## A deferred transaction cannot wait for another writer (Change 38)
+
+- **Symptom:** with more than one connection, a transaction that read first and then wrote failed at
+  once with `SQLITE_BUSY`, `busy_timeout` notwithstanding.
+- **Cause:** SQLite cannot upgrade a read snapshot to a write lock while another connection writes;
+  waiting could deadlock, so it fails instead.
+- **Fix:** the pool opens every transaction `IMMEDIATE` (`_txlock=immediate`), which takes the write
+  lock at `BEGIN`, where `busy_timeout` does wait.

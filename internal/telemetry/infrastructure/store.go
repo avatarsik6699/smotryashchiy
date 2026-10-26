@@ -100,9 +100,24 @@ func (s *Store) Store(ctx context.Context, hostID, key string, receivedAt time.T
 	}
 
 	result := application.StoreResult{Accepted: domain.Batch{SchemaVersion: batch.SchemaVersion}}
+	// Change 38: each kind's INSERT is prepared once per batch, not parsed again per record.
+	insertMetric, err := prepared(ctx, tx, len(batch.Metrics),
+		`INSERT INTO metrics (host_id, name, labels_json, ts, value, schema_version) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`)
+	if err != nil {
+		return application.StoreResult{}, err
+	}
+	insertCheck, err := prepared(ctx, tx, len(batch.Checks),
+		`INSERT INTO checks (host_id, name, ts, status, meta_json, schema_version) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`)
+	if err != nil {
+		return application.StoreResult{}, err
+	}
+	insertEvent, err := prepared(ctx, tx, len(batch.Events),
+		`INSERT INTO events (host_id, ts, level, message, labels_json, schema_version) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`)
+	if err != nil {
+		return application.StoreResult{}, err
+	}
 	for _, m := range batch.Metrics {
-		inserted, err := insertIgnore(ctx, tx,
-			`INSERT INTO metrics (host_id, name, labels_json, ts, value, schema_version) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
+		inserted, err := insertIgnore(ctx, insertMetric,
 			hostID, m.Name, domain.CanonicalLabels(m.Labels), m.TS.UnixMilli(), m.Value, batch.SchemaVersion)
 		if err != nil {
 			return application.StoreResult{}, err
@@ -114,8 +129,7 @@ func (s *Store) Store(ctx context.Context, hostID, key string, receivedAt time.T
 		}
 	}
 	for _, c := range batch.Checks {
-		inserted, err := insertIgnore(ctx, tx,
-			`INSERT INTO checks (host_id, name, ts, status, meta_json, schema_version) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
+		inserted, err := insertIgnore(ctx, insertCheck,
 			hostID, c.Name, c.TS.UnixMilli(), c.Status, string(c.Meta), batch.SchemaVersion)
 		if err != nil {
 			return application.StoreResult{}, err
@@ -127,8 +141,7 @@ func (s *Store) Store(ctx context.Context, hostID, key string, receivedAt time.T
 		}
 	}
 	for _, e := range batch.Events {
-		inserted, err := insertIgnore(ctx, tx,
-			`INSERT INTO events (host_id, ts, level, message, labels_json, schema_version) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
+		inserted, err := insertIgnore(ctx, insertEvent,
 			hostID, e.TS.UnixMilli(), e.Level, e.Message, domain.CanonicalLabels(e.Labels), batch.SchemaVersion)
 		if err != nil {
 			return application.StoreResult{}, err
@@ -158,8 +171,20 @@ func (s *Store) Store(ctx context.Context, hostID, key string, receivedAt time.T
 	return result, nil
 }
 
-func insertIgnore(ctx context.Context, tx *sql.Tx, query string, args ...any) (bool, error) {
-	res, err := tx.ExecContext(ctx, query, args...)
+// prepared prepares query on tx when the batch has records for it; the statement closes with tx.
+func prepared(ctx context.Context, tx *sql.Tx, records int, query string) (*sql.Stmt, error) {
+	if records == 0 {
+		return nil, nil
+	}
+	stmt, err := tx.PrepareContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("telemetry: prepare insert: %w", err)
+	}
+	return stmt, nil
+}
+
+func insertIgnore(ctx context.Context, stmt *sql.Stmt, args ...any) (bool, error) {
+	res, err := stmt.ExecContext(ctx, args...)
 	if err != nil {
 		return false, fmt.Errorf("telemetry: insert record: %w", err)
 	}
@@ -200,9 +225,14 @@ func (s *Store) Metrics(ctx context.Context, q application.MetricQuery) ([]domai
 	var query string
 	if q.Step > 0 {
 		stepSource := "metrics"
-		// Without a host filter, SQLite otherwise scans every raw series through
-		// metrics_series_ts, even when the caller requests only the last hour.
-		if q.HostID == "" && (q.From != nil || q.To != nil) {
+		switch {
+		case q.HostID == "" && q.Name != "":
+			// Change 38: one series range per host through metrics_series_ts instead of every
+			// metric of the window through metrics_ts; the host list is short.
+			f.conds = append(f.conds, "host_id IN (SELECT id FROM hosts)")
+		case q.HostID == "" && (q.From != nil || q.To != nil):
+			// Without a host or name, SQLite otherwise scans every raw series through
+			// metrics_series_ts, even when the caller requests only the last hour.
 			stepSource += " INDEXED BY metrics_ts"
 		}
 		if q.From != nil {
@@ -213,11 +243,13 @@ func (s *Store) Metrics(ctx context.Context, q application.MetricQuery) ([]domai
 		}
 		// Newest sample per Step-second bucket per series; ts is part of the primary key, so the
 		// join back on (series, ts) selects exactly one row per bucket.
-		query = `SELECT m.host_id, m.name, m.labels_json, m.ts, m.value FROM metrics m
+		// The limit keeps the newest buckets (Change 38); the outer query turns them oldest first.
+		query = `SELECT * FROM (SELECT m.host_id, m.name, m.labels_json, m.ts, m.value FROM metrics m
 			JOIN (SELECT host_id, name, labels_json, MAX(ts) AS ts FROM ` + stepSource + f.where() + `
 			      GROUP BY host_id, name, labels_json, ts / ?) l
 			  ON m.host_id = l.host_id AND m.name = l.name AND m.labels_json = l.labels_json AND m.ts = l.ts
-			ORDER BY m.ts, m.host_id, m.name, m.labels_json LIMIT ?`
+			ORDER BY m.ts DESC, m.host_id, m.name, m.labels_json LIMIT ?)
+			ORDER BY ts, host_id, name, labels_json`
 		f.args = append(f.args, int64(q.Step)*1000)
 	} else if q.Latest {
 		query = `SELECT host_id, name, labels_json, ts, value FROM metric_latest` + f.where() +
@@ -229,8 +261,10 @@ func (s *Store) Metrics(ctx context.Context, q application.MetricQuery) ([]domai
 		if q.To != nil {
 			f.add("ts <= ?", q.To.UnixMilli())
 		}
-		query = `SELECT host_id, name, labels_json, ts, value FROM metrics` + f.where() +
-			` ORDER BY ts, host_id, name, labels_json LIMIT ?`
+		// The limit keeps the newest samples (Change 38: an hour of many interfaces used to lose
+		// its end); the outer query turns them oldest first.
+		query = `SELECT * FROM (SELECT host_id, name, labels_json, ts, value FROM metrics` + f.where() +
+			` ORDER BY ts DESC, host_id, name, labels_json LIMIT ?) ORDER BY ts, host_id, name, labels_json`
 	}
 	rows, err := s.db.QueryContext(ctx, query, append(f.args, q.Limit)...)
 	if err != nil {
@@ -289,10 +323,9 @@ func (s *Store) Checks(ctx context.Context, q application.CheckQuery) ([]domain.
 	if q.Name != "" {
 		f.add("name = ?", q.Name)
 	}
-	query := `SELECT c.host_id, c.name, c.ts, c.status, c.meta_json FROM checks c
-		JOIN (SELECT host_id, name, MAX(ts) AS ts FROM checks` + f.where() + ` GROUP BY host_id, name) l
-		  ON c.host_id = l.host_id AND c.name = l.name AND c.ts = l.ts
-		ORDER BY c.host_id, c.name LIMIT ?`
+	// check_latest is kept by triggers (migration 0013, Change 38).
+	query := `SELECT host_id, name, ts, status, meta_json FROM check_latest` + f.where() +
+		` ORDER BY host_id, name LIMIT ?`
 	rows, err := s.db.QueryContext(ctx, query, append(f.args, maxCheckRows)...)
 	if err != nil {
 		return nil, fmt.Errorf("telemetry: query checks: %w", err)
@@ -322,6 +355,9 @@ func (s *Store) Events(ctx context.Context, q application.EventQuery) ([]domain.
 	}
 	if q.Level != "" {
 		f.add("level = ?", q.Level)
+	}
+	if q.From != nil {
+		f.add("ts >= ?", q.From.UnixMilli())
 	}
 	query := `SELECT host_id, ts, level, message, labels_json FROM events` + f.where() +
 		` ORDER BY ts DESC, host_id, level, message LIMIT ?`

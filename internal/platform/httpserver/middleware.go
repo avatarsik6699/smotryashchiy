@@ -23,9 +23,10 @@ func RequestIDFromContext(ctx context.Context) string {
 }
 
 // Chain wraps handler with the platform's standard middleware: request ID, structured access
-// logging, and panic recovery.
+// logging, response compression (Change 38) and panic recovery. Compression sits outside recovery
+// so a recovered panic's 500 still goes through it in order.
 func Chain(handler http.Handler) http.Handler {
-	return withRequestID(withLogging(withRecover(handler)))
+	return withRequestID(withLogging(withCompression(withRecover(handler))))
 }
 
 func withRequestID(next http.Handler) http.Handler {

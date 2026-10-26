@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func openTemp(t *testing.T) string {
@@ -194,5 +195,56 @@ func TestMetricLatestBackfillAndTriggers(t *testing.T) {
 	defer reopened.Close()
 	if err := Migrate(reopened); err != nil {
 		t.Fatalf("restart migration: %v", err)
+	}
+}
+
+// Change 38: readers do not queue behind an open write transaction, and a second writer waits for
+// the first instead of failing with SQLITE_BUSY.
+func TestReadersRunBesideAWriterAndWritersTakeTurns(t *testing.T) {
+	sqlDB, err := Open(openTemp(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqlDB.Close()
+	ctx := context.Background()
+	if _, err := sqlDB.Exec(`CREATE TABLE t (v INTEGER)`); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := sqlDB.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(`INSERT INTO t VALUES (1)`); err != nil {
+		t.Fatal(err)
+	}
+	readCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	var n int
+	if err := sqlDB.QueryRowContext(readCtx, `SELECT COUNT(*) FROM t`).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("read beside an open writer = %d, %v; want 0 at once", n, err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		tx2, err := sqlDB.BeginTx(ctx, nil)
+		if err == nil {
+			_, err = tx2.Exec(`INSERT INTO t VALUES (2)`)
+		}
+		if err == nil {
+			err = tx2.Commit()
+		}
+		done <- err
+	}()
+	time.Sleep(100 * time.Millisecond)
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("second writer: %v", err)
+	}
+	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM t`).Scan(&n); err != nil || n != 2 {
+		t.Fatalf("rows = %d, %v", n, err)
+	}
+	if err := Optimize(ctx, sqlDB); err != nil {
+		t.Fatalf("Optimize: %v", err)
 	}
 }

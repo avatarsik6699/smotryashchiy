@@ -99,7 +99,20 @@ Agents reconnect on their own: the WireGuard server key is part of the bundle. P
   after `SMOTRYASHCHIY_ROLLUP_RETENTION_DAYS` (default 396). Purged rows free pages inside the file
   for reuse; the file itself shrinks only after a `VACUUM`. If disk use is unexpectedly high, check
   `docker exec <container> /smotryashchiy admin backup --out - | wc -c` (the compressed database size)
-  before lowering retention.
+  before lowering retention. To give the space back (Change 38; about a minute of downtime, agents
+  spool and resend meanwhile):
+  ```bash
+  (umask 077; docker exec <container> /smotryashchiy admin backup --out - > pre-vacuum-$(date +%F).tar.gz)
+  docker compose stop server
+  docker compose run --rm -T server admin vacuum      # prints the size before and after
+  docker compose up -d
+  ```
+  It needs free disk about the database's size while it runs, and refuses while the server is up.
+- **Slowness** (Change 38): the access log carries every request's `duration`. API reads stay in
+  milliseconds on the reference server; seconds point at disk pressure (`/proc/pressure/io`) or a
+  planner without statistics (statistics are refreshed at start-up and daily). Static assets are sent
+  precompressed: `curl -sI -H 'Accept-Encoding: br' https://<host>/assets/<file>.js` shows
+  `content-encoding: br`.
 - **Agents**: the dashboard's host rows show `STALE`/`OFFLINE` in text when an agent stops reporting;
   it never silently reads as healthy.
 - **Analytics delivery** (Change 26): while signed in, `GET /api/collect/stats` returns collect

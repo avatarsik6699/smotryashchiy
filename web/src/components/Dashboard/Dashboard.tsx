@@ -3,22 +3,16 @@ import { lazy, Suspense, useCallback, useMemo, useState } from 'react'
 import { DashboardProvider, useDashboard, useStore } from '../../data/DashboardContext'
 import type { DashboardStore } from '../../data/store'
 import { fleetSummary } from '../../data/health'
-import { LESSON_BY_ID, LESSONS, type LessonId } from '../../guide/lessons'
+import { LESSON_IDS, type LessonId } from '../../guide/lessonIds'
 import { useSites } from '../../data/useSites'
 import { hostView } from '../../data/model'
 import { uptimeState } from '../../domain/uptime'
 import { hostState } from '../../domain/freshness'
 import { useNow } from '../../hooks/useNow'
-import { AddSiteDialog } from '../Analytics/AddSiteDialog'
-import { AnalyticsView } from '../Analytics/AnalyticsView'
-import { SalesView } from '../Sales/SalesView'
-import { useSales } from '../../data/useSales'
 import { useBackups } from '../../data/useBackups'
 import { hostBackup } from '../../domain/backup'
 import { worst } from '../../domain/health'
 import { BackupsSection } from './BackupsSection'
-import { AddHostDialog } from './AddHostDialog'
-import { AddTargetDialog } from './AddTargetDialog'
 import { CommandBar, type View } from './CommandBar'
 import { EventsSection } from './EventsSection'
 import { HostsSection } from './HostsSection'
@@ -26,12 +20,17 @@ import { UptimeSection } from './UptimeSection'
 import { StatusStrip, type BackupCount, type HostEntry } from './StatusStrip'
 import { SummaryLine } from './SummaryLine'
 import { GuideNavContext } from '../Guide/GuideNav'
-import { OperatorView } from '../Operator/OperatorView'
-import { useOperator } from '../../data/useOperator'
 import styles from './Dashboard.module.css'
 
 // The guide is text the Monitoring view does not need: loaded on first use, outside the main bundle.
 const GuideView = lazy(() => import('../Guide/GuideView'))
+// Change 38: the other views and the dialogs load on first use too.
+const AnalyticsView = lazy(() => import('../Analytics/AnalyticsView').then((m) => ({ default: m.AnalyticsView })))
+const SalesSection = lazy(() => import('../Sales/SalesSection'))
+const OperatorSection = lazy(() => import('../Operator/OperatorSection'))
+const AddHostDialog = lazy(() => import('./AddHostDialog').then((m) => ({ default: m.AddHostDialog })))
+const AddTargetDialog = lazy(() => import('./AddTargetDialog').then((m) => ({ default: m.AddTargetDialog })))
+const AddSiteDialog = lazy(() => import('../Analytics/AddSiteDialog').then((m) => ({ default: m.AddSiteDialog })))
 
 const LESSON_KEY = 'smotryashchiy.guide.lesson'
 
@@ -39,11 +38,11 @@ const LESSON_KEY = 'smotryashchiy.guide.lesson'
 function storedLesson(): LessonId {
   try {
     const v = window.localStorage.getItem(LESSON_KEY)
-    if (v && v in LESSON_BY_ID) return v as LessonId
+    if (v && (LESSON_IDS as readonly string[]).includes(v)) return v as LessonId
   } catch {
     // ignore: start at the first lesson
   }
-  return LESSONS[0]!.id
+  return LESSON_IDS[0]
 }
 
 function storeLesson(id: LessonId) {
@@ -72,8 +71,10 @@ export function Dashboard({ onLogout, store }: DashboardProps) {
 function DashboardView({ onLogout }: { onLogout: () => Promise<void> }) {
   const state = useDashboard()
   const store = useStore()
-  const now = useNow(5000)
   const [view, setView] = useState<View>('monitoring')
+  // Ages on Monitoring and in the guide tick every 5 s; the other views show minutes at most
+  // (Change 38: the 5 s tick re-rendered every view).
+  const now = useNow(view === 'monitoring' || view === 'guide' ? 5000 : 60_000)
   const [lesson, setLessonState] = useState<LessonId>(storedLesson)
   const setLesson = useCallback((id: LessonId) => {
     setLessonState(id)
@@ -87,9 +88,17 @@ function DashboardView({ onLogout }: { onLogout: () => Promise<void> }) {
     },
     [setLesson],
   )
-  const [adding, setAdding] = useState(false)
-  const [addingTarget, setAddingTarget] = useState(false)
-  const [addingSite, setAddingSite] = useState(false)
+  const [adding, setAddingState] = useState(false)
+  const [addingTarget, setAddingTargetState] = useState(false)
+  const [addingSite, setAddingSiteState] = useState(false)
+  const [opened, setOpened] = useState<ReadonlySet<'host' | 'target' | 'site'>>(new Set())
+  const opener = (kind: 'host' | 'target' | 'site', set: (open: boolean) => void) => (open: boolean) => {
+    if (open) setOpened((o) => (o.has(kind) ? o : new Set([...o, kind])))
+    set(open)
+  }
+  const setAdding = opener('host', setAddingState)
+  const setAddingTarget = opener('target', setAddingTargetState)
+  const setAddingSite = opener('site', setAddingSiteState)
   const sites = useSites()
   const backupDocs = useBackups()
 
@@ -171,51 +180,33 @@ function DashboardView({ onLogout }: { onLogout: () => Promise<void> }) {
               </>
             )}
           </>
-        ) : view === 'analytics' ? (
-          <AnalyticsView status={sites.status} error={sites.error} sites={sites.sites} onAddSite={() => setAddingSite(true)} />
-        ) : view === 'sales' ? (
-          <SalesSection now={now} />
-        ) : view === 'operator' ? (
-          <OperatorSection now={now} />
         ) : (
           <Suspense
             fallback={
               <p className={styles.notice} role="status">
-                loading the guide…
+                loading {view}…
               </p>
             }
           >
-            <GuideView lesson={lesson} onLessonChange={setLesson} sites={sites.sites} backups={backups} />
+            {view === 'analytics' ? (
+              <AnalyticsView status={sites.status} error={sites.error} sites={sites.sites} onAddSite={() => setAddingSite(true)} />
+            ) : view === 'sales' ? (
+              <SalesSection now={now} />
+            ) : view === 'operator' ? (
+              <OperatorSection now={now} />
+            ) : (
+              <GuideView lesson={lesson} onLessonChange={setLesson} sites={sites.sites} backups={backups} />
+            )}
           </Suspense>
         )}
       </main>
-      <AddHostDialog open={adding} onOpenChange={setAdding} />
-      <AddTargetDialog open={addingTarget} onOpenChange={setAddingTarget} />
-      <AddSiteDialog open={addingSite} onOpenChange={setAddingSite} onCreated={sites.reload} />
+      {/* A dialog's code loads the first time it opens and then stays, so it can animate closed. */}
+      <Suspense fallback={null}>
+        {opened.has('host') && <AddHostDialog open={adding} onOpenChange={setAdding} />}
+        {opened.has('target') && <AddTargetDialog open={addingTarget} onOpenChange={setAddingTarget} />}
+        {opened.has('site') && <AddSiteDialog open={addingSite} onOpenChange={setAddingSite} onCreated={sites.reload} />}
+      </Suspense>
     </div>
     </GuideNavContext.Provider>
   )
-}
-
-/** The operator console loads only while its view is open and refreshes every minute (Change 30). */
-function OperatorSection({ now }: { now: number }) {
-  const op = useOperator()
-  return (
-    <OperatorView
-      status={op.status}
-      error={op.error}
-      documents={op.documents}
-      commands={op.commands}
-      incidents={op.incidents}
-      audit={op.audit}
-      now={now}
-      onReload={op.reload}
-    />
-  )
-}
-
-/** Sales loads only while its view is open: a summary changes hourly, nothing streams it (Change 27). */
-function SalesSection({ now }: { now: number }) {
-  const sales = useSales()
-  return <SalesView status={sales.status} error={sales.error} documents={sales.documents} now={now} onRetry={sales.reload} />
 }

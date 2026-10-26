@@ -13,9 +13,14 @@ const (
 	rerollWindow = 24 * time.Hour
 	// purgeBatch bounds every delete statement so the single SQLite writer is never held long.
 	purgeBatch = 5000
+	// purgePause separates purge batches so ingest commits interleave with a long purge
+	// (Change 38).
+	purgePause = 50 * time.Millisecond
 
 	rollupInterval = time.Hour
-	purgeInterval  = 24 * time.Hour
+	// purgeInterval: hourly since Change 38, so each run removes about an hour of rows instead
+	// of a whole day at once.
+	purgeInterval = time.Hour
 )
 
 // Maintenance runs the rollup and retention jobs (docs/SPEC.md §4.4–§4.5).
@@ -100,6 +105,11 @@ func drain(ctx context.Context, step func() (int, error)) error {
 		}
 		if n == 0 {
 			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(purgePause):
 		}
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -74,26 +75,46 @@ func likeEscape(s string) string {
 // RawRows breaks raw visits (or, by page, their pageviews) of [from, to) down by one dimension;
 // "" is the total.
 func (s *Store) RawRows(ctx context.Context, siteID, dimension string, from, to time.Time, filters []domain.Filter) ([]domain.Row, error) {
+	query, args := rawRowsSQL(siteID, dimension, from, to, filters)
+	return s.rows(ctx, query, args...)
+}
+
+// topColumns are the RawRows columns a count metric sorts by (value is column 1).
+var topColumns = map[string]int{domain.MetricVisitors: 2, domain.MetricVisits: 3, domain.MetricPageviews: 4}
+
+// RawTopRows is RawRows cut to the first limit rows by a count metric, then value — the same order
+// the query API sorts in, so the database does the cut (Change 38). Other metrics are derived and
+// rounded in Go, so they keep the full read.
+func (s *Store) RawTopRows(ctx context.Context, siteID, dimension string, from, to time.Time, filters []domain.Filter, metric string, limit int) ([]domain.Row, error) {
+	col, ok := topColumns[metric]
+	if !ok {
+		return s.RawRows(ctx, siteID, dimension, from, to, filters)
+	}
+	query, args := rawRowsSQL(siteID, dimension, from, to, filters)
+	return s.rows(ctx, `SELECT * FROM (`+query+`) ORDER BY `+strconv.Itoa(col)+` DESC, 1 LIMIT ?`, append(args, limit)...)
+}
+
+func rawRowsSQL(siteID, dimension string, from, to time.Time, filters []domain.Filter) (string, []any) {
 	if dimension == domain.DimensionPage {
 		where, args := filterSQL(filters, "p")
-		return s.rows(ctx, `SELECT x.path, COUNT(DISTINCT x.hash), COUNT(*), SUM(x.n), SUM(x.bounce), SUM(x.dur) FROM (
+		return `SELECT x.path, COUNT(DISTINCT x.hash), COUNT(*), SUM(x.n), SUM(x.bounce), SUM(x.dur) FROM (
 			SELECT p.path, p.visitor_hash AS hash, COUNT(*) AS n, MAX(v.pageviews = 1) AS bounce,
 				MAX(v.last_at - v.started_at) AS dur
 			FROM pageviews p JOIN visits v ON v.id = p.visit_id
-			WHERE p.site_id = ? AND p.ts >= ? AND p.ts < ?`+where+`
+			WHERE p.site_id = ? AND p.ts >= ? AND p.ts < ?` + where + `
 			GROUP BY p.path, p.visit_id) x GROUP BY x.path`,
-			append([]any{siteID, from.UnixMilli(), to.UnixMilli()}, args...)...)
+			append([]any{siteID, from.UnixMilli(), to.UnixMilli()}, args...)
 	}
 	value := "''"
 	if dimension != "" {
 		value = "v." + domain.VisitColumns[dimension]
 	}
 	where, args := filterSQL(filters, "")
-	return s.rows(ctx, `SELECT `+value+`, COUNT(DISTINCT v.visitor_hash), COUNT(*), COALESCE(SUM(v.pageviews), 0),
+	return `SELECT ` + value + `, COUNT(DISTINCT v.visitor_hash), COUNT(*), COALESCE(SUM(v.pageviews), 0),
 		COALESCE(SUM(v.pageviews = 1), 0), COALESCE(SUM(v.last_at - v.started_at), 0)
-		FROM visits v WHERE v.site_id = ? AND v.started_at >= ? AND v.started_at < ?`+where+`
+		FROM visits v WHERE v.site_id = ? AND v.started_at >= ? AND v.started_at < ?` + where + `
 		GROUP BY 1 HAVING COUNT(*) > 0`,
-		append([]any{siteID, from.UnixMilli(), to.UnixMilli()}, args...)...)
+		append([]any{siteID, from.UnixMilli(), to.UnixMilli()}, args...)
 }
 
 // DailyRows sums the aggregates of [from, to] by one dimension's values.

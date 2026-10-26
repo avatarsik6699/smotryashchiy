@@ -9,7 +9,7 @@
 | Change | `35` |
 | Slug | `analytics-collection-v2` |
 | Title | Analytics collection v2: visits, sources, geography, devices |
-| Status | `active` |
+| Status | `archived` |
 | Branch | `feature/35-analytics-collection-v2` |
 
 ---

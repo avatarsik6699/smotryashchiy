@@ -107,6 +107,12 @@ Agents reconnect on their own: the WireGuard server key is part of the bundle. P
   `unknown_site`, `origin_mismatch`, `error`). A site that stops counting after a domain move shows
   growing `origin_mismatch`; storage failures show as `error` with an `analytics collect failed`
   log line (no IP or User-Agent). Counters reset on restart.
+- **Analytics history** (Change 36): an hourly job keeps `analytics_daily` (today and yesterday
+  rebuilt, missing days backfilled from raw rows, days older than 25 months dropped); a failure logs
+  `analytics maintenance job failed job=rollup` and retries at the next hour. Raw rows answer the
+  last `SMOTRYASHCHIY_ANALYTICS_RETENTION_DAYS` days with filters; older days come from the aggregates
+  without them. Lowering the retention therefore loses filters for those days, never their totals,
+  provided the job ran while their raw rows existed.
 - **Sales** (Change 27): the source line shows the summary's age; past two hours it reads stale —
   check the site's hourly billing timer (`journalctl -u infraege-billing-hourly`) and that the agent
   unit runs with `--document business=…`. `GET /api/documents?kind=business` shows what the server holds.

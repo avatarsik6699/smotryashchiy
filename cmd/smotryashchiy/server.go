@@ -106,12 +106,15 @@ func runServer(stdout, stderr io.Writer) error {
 	go uptimeSvc.Run(ctx)
 	geo := analyticsinfra.NewGeoIP(cfg.GeoIPPath, time.Now)
 	defer func() { _ = geo.Close() }()
-	analyticsSvc := analyticsapp.NewService(analyticsinfra.NewStore(sqlDB), time.Now,
-		analyticsapp.Options{Retention: time.Duration(cfg.AnalyticsRetentionDays) * 24 * time.Hour, Geo: geo})
-	analyticshttp.NewHandlers(analyticsSvc).Register(srv.Mux)
+	analyticsStore := analyticsinfra.NewStore(sqlDB)
+	analyticsRetention := time.Duration(cfg.AnalyticsRetentionDays) * 24 * time.Hour
+	analyticsSvc := analyticsapp.NewService(analyticsStore, time.Now, analyticsapp.Options{Retention: analyticsRetention, Geo: geo})
+	analyticsQueries := analyticsapp.NewQueries(analyticsStore, time.Now, analyticsRetention)
+	analyticshttp.NewHandlers(analyticsSvc, analyticsQueries).Register(srv.Mux)
 	analyticshttp.NewCollectHandlers(analyticsSvc, cfg.TrustedProxyCIDRs).Register(srv.Mux)
 	analyticshttp.NewTrackHandlers().Register(srv.Mux)
 	go analyticsSvc.Run(ctx)
+	go analyticsQueries.Run(ctx)
 	maintenance := telemetryapp.NewMaintenance(store, cfg.RawRetentionDays, cfg.RollupRetentionDays, time.Now)
 	go maintenance.Run(ctx)
 	srv.Mux.Handle("/", web.Handler()) // embedded SPA; the auth middleware keeps /api/ gated

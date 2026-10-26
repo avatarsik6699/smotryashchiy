@@ -248,8 +248,8 @@ func (s *Service) Purge(ctx context.Context) error {
 
 // Run executes the purge immediately and then hourly until ctx is done. Failures are logged and
 // retried at the next tick; they never stop the server (mirrors
-// internal/telemetry/application/maintenance.go's Run). There is no rollup: stats read raw
-// pageviews only (docs/SPEC.md §4i).
+// internal/telemetry/application/maintenance.go's Run). The daily aggregates have their own job
+// (Queries.Run, Change 36).
 func (s *Service) Run(ctx context.Context) {
 	s.runOnce(ctx, "purge", s.Purge)
 	purgeTick := time.NewTicker(purgeInterval)

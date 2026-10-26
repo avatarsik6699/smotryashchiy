@@ -570,8 +570,8 @@ Change 28) apart from the raw telemetry TTL of §4.5, so trimming host metrics n
 range. Every stats range (at most 30 days) fits
 inside the default, so stats read raw pageviews only. The daily rollup table `pageview_rollups_daily` that Change 14
 added was written hourly and never read; Change 20 removed its job and dropped the table with a
-forward-only migration (every row was derivable from raw pageviews). Longer ranges would bring a
-rollup back together with a reader for it.
+forward-only migration (every row was derivable from raw pageviews). Change 36 brings daily
+aggregates back together with their reader, the query API (below).
 
 **Read API** (session required): `GET /api/sites` → `{"sites":[{id,name,domain,created_at}]}`;
 `POST /api/sites {name,domain}` → `201` site plus the ready-to-paste `<script>` tag (`400` invalid,
@@ -626,6 +626,42 @@ period comparison; Change 37 adds the dashboard. The server still derives everyt
 - `GET /api/sites/{id}/stats` keeps its shape and adds `visits`, `bounce_rate` (0..1) and
   `visit_duration_seconds` (mean first-to-last pageview; a one-page visit is 0). They count visits
   started in the range.
+
+**Queries and history (Change 36).** One query endpoint feeds the dashboard; the old `stats` stays
+until Change 37 replaces its reader.
+- **Daily aggregates.** `analytics_daily (site_id, day, dimension, value, visitors, visits,
+  pageviews, bounces, duration_ms)`; `day` is the site's local date. Dimensions: the total (`''`),
+  page, entry/exit page, channel, source, the five UTM, country, region, browser and version, OS and
+  version, device, screen, hostname. Every count is additive across days, because a visitor hash and
+  a visit live inside one site day. A page row counts the visits that viewed the page; its bounce and
+  duration are those visits'.
+- **Aggregate job**, hourly with the raw purge: for every site it rebuilds today and yesterday,
+  backfills any day the raw rows still hold whole that has no aggregate, and drops days older than
+  25 months. A rebuild replaces the day, so a rerun never double-counts; a day without visits keeps a
+  zero total.
+- **`POST /api/sites/{id}/query`** (session), unknown fields rejected:
+  - `metrics` ⊆ visitors, visits, pageviews, views_per_visit, bounce_rate (%), visit_duration (s);
+    default visitors;
+  - `dimension`: one of the aggregate dimensions or `time:hour|day|week|month`; none means the total;
+  - `filters` `[{dimension, op: is|is_not|contains, values}]`, ANDed, at most 8 × 20 values; a page
+    filter on a visit breakdown keeps visits that viewed such a page;
+  - `date_range` `[from, to]` (site days, both included, at most 25 months) or `period` today,
+    yesterday, 7d, 30d, month, last_month, 12mo (12 calendar months including this one);
+  - `compare` previous (the same number of days just before) or year_ago (the same dates);
+  - `order_by` one of the metrics (default the first), `limit` ≤ 1000 (default 100), `format` json|csv.
+- **Answer** `{date_range, compare_range?, timezone, source, rows:[{value, metrics, compare?,
+  compare_value?}]}`. A breakdown compares the same value; a time series compares buckets by position
+  and labels the comparison's. Time series list every bucket, zeros included. Weeks start on Monday
+  and months on the 1st, clipped to the range; an hour label is RFC 3339 with the site's offset, so a
+  DST day has 23 or 25 of them.
+- **Sources.** Days the raw retention still holds whole read raw rows; older days read the aggregates,
+  and a range across the boundary sums both (`source: aggregates`). Filters and hour intervals need
+  raw rows: otherwise `400` with the reason. Hour intervals take one day. A query has a 10 s
+  deadline (`400` when exceeded).
+- **CSV** (`"format":"csv"`): one header line (the dimension, the metrics, then `compare_…`), one line
+  per row. A cell starting with `= + - @`, a tab or a carriage return gets a leading `'`.
+- **`GET /api/sites/{id}/realtime`** → `{visitors}`: distinct visitor hashes with a pageview in the
+  last 5 minutes.
 
 **Deferred:** live pageview counts over the WebSocket stream (§4.6); engagement pings, Web Vitals,
 404 signals, search consoles and a SEO audit (stages S5–S7 of the 2026-10-14 plan, later decisions).

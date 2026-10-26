@@ -25,10 +25,11 @@ func newTestServer(t *testing.T) (*httptest.Server, *application.Service) {
 	if err := db.Migrate(sqlDB); err != nil {
 		t.Fatal(err)
 	}
-	svc := application.NewService(infrastructure.NewStore(sqlDB), time.Now, application.Options{})
+	store := infrastructure.NewStore(sqlDB)
+	svc := application.NewService(store, time.Now, application.Options{})
 	mux := http.NewServeMux()
 	NewCollectHandlers(svc, nil).Register(mux)
-	NewHandlers(svc).Register(mux)
+	NewHandlers(svc, application.NewQueries(store, time.Now, 0)).Register(mux)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv, svc

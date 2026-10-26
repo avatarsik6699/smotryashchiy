@@ -1,0 +1,100 @@
+.box {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.svg {
+  display: block;
+  max-width: 100%;
+  touch-action: pan-y;
+}
+
+.svg:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+.baseline,
+.grid {
+  stroke: var(--hairline);
+  stroke-width: 1;
+}
+
+.grid {
+  stroke-dasharray: 2 4;
+}
+
+.axis {
+  fill: var(--text-muted);
+  font-family: var(--font);
+  font-size: 11px;
+}
+
+.area {
+  fill: var(--series-current);
+  fill-opacity: 0.1;
+}
+
+.current,
+.compare {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.current {
+  stroke: var(--series-current);
+}
+
+.compare {
+  stroke: var(--series-compare);
+  stroke-dasharray: 6 5;
+}
+
+.cross {
+  stroke: var(--text-muted);
+  stroke-width: 1;
+}
+
+.dot {
+  fill: var(--series-current);
+  stroke: var(--surface);
+  stroke-width: 2;
+}
+
+.tip {
+  position: absolute;
+  top: 8px;
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--raised);
+  font-size: 0.75rem;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.tipTitle {
+  color: var(--text-muted);
+}
+
+.keyCurrent,
+.keyCompare {
+  display: inline-block;
+  width: 14px;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+
+.keyCurrent {
+  height: 2px;
+  background: var(--series-current);
+}
+
+.keyCompare {
+  border-top: 2px dashed var(--series-compare);
+}

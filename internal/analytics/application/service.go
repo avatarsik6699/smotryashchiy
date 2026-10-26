@@ -1,4 +1,4 @@
-// Package application implements site creation, pageview ingestion and stats for site analytics
+// Package application implements site creation, pageview ingestion and queries for site analytics
 // (docs/SPEC.md §4i).
 package application
 
@@ -29,7 +29,6 @@ type Repository interface {
 	// site and visitor hash whose last pageview is less than domain.VisitIdle old, else a new visit
 	// described by v. One transaction, so a crash never leaves a pageview without its visit.
 	RecordPageview(ctx context.Context, p domain.Pageview, v domain.Visit) error
-	Stats(ctx context.Context, siteID string, since time.Time) (domain.Stats, error)
 	DailySaltBase(ctx context.Context) (string, error)
 	PurgePageviews(ctx context.Context, before time.Time, limit int) (int, error)
 }
@@ -117,24 +116,6 @@ func (s *Service) Sites(ctx context.Context) ([]domain.Site, error) {
 // DeleteSite removes a site and its pageviews.
 func (s *Service) DeleteSite(ctx context.Context, id string) error {
 	return s.repo.DeleteSite(ctx, id)
-}
-
-// rangeDays maps a stats range name to how many UTC calendar days it covers, today included.
-var rangeDays = map[string]int{
-	"today": 1,
-	"7d":    7,
-	"30d":   30,
-}
-
-// Stats returns a site's pageview summary over range ("today"|"7d"|"30d"), defaulting to "today".
-// Ranges are UTC calendar days, not rolling windows (docs/SPEC.md §4i): "today" starts at 00:00 UTC.
-func (s *Service) Stats(ctx context.Context, siteID, rng string) (domain.Stats, error) {
-	days, ok := rangeDays[rng]
-	if !ok {
-		days = rangeDays["today"]
-	}
-	today := s.now().UTC().Truncate(24 * time.Hour)
-	return s.repo.Stats(ctx, siteID, today.AddDate(0, 0, -(days-1)))
 }
 
 // Collect validates a beacon, derives everything server-side, and stores the pageview. It never

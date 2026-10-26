@@ -74,21 +74,3 @@ export interface SiteDTO {
   created_at: string
 }
 
-export type StatsRange = 'today' | '7d' | '30d'
-
-export interface PathCountDTO {
-  path: string
-  count: number
-}
-
-export interface DomainCountDTO {
-  domain: string
-  count: number
-}
-
-export interface SiteStatsDTO {
-  pageviews: number
-  visitors: number
-  top_pages: PathCountDTO[]
-  top_referrers: DomainCountDTO[]
-}

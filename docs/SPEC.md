@@ -575,12 +575,9 @@ aggregates back together with their reader, the query API (below).
 
 **Read API** (session required): `GET /api/sites` → `{"sites":[{id,name,domain,created_at}]}`;
 `POST /api/sites {name,domain}` → `201` site plus the ready-to-paste `<script>` tag (`400` invalid,
-`409` duplicate domain); `DELETE /api/sites/{id}` → `204`, pageviews deleted with it; `GET
-/api/sites/{id}/stats?range=today|7d|30d` → `{pageviews, visitors, top_pages:[{path,count}],
-top_referrers:[{domain,count}]}`. Ranges are UTC calendar days, not rolling windows (Change 19;
-`today` used to mean "the last 24 h", which mislabeled yesterday evening as today): `today` counts
-from 00:00 UTC of the current day, `7d` and `30d` from 00:00 UTC of the day 6 or 29 days earlier,
-i.e. the last 7 or 30 calendar days including today. `visitors` over several days is the number of
+`409` duplicate domain); `DELETE /api/sites/{id}` → `204`, pageviews deleted with it. Reports go
+through the query API below; `GET /api/sites/{id}/stats` (UTC days, Changes 14–19) was removed with
+Change 37, once the dashboard stopped reading it. `visitors` over several days is the number of
 distinct daily visitor hashes, so one person visiting on three days counts three times (the hash
 rotates daily by design).
 
@@ -623,12 +620,10 @@ period comparison; Change 37 adds the dashboard. The server still derives everyt
 - **Versions.** Browser major version and the OS version the User-Agent still carries. Chromium
   freezes macOS at 10.15 and reduced Android UAs at 10, and Windows 10 and 11 both say NT 10.0
   ("10/11"), so an OS version is a hint.
-- `GET /api/sites/{id}/stats` keeps its shape and adds `visits`, `bounce_rate` (0..1) and
-  `visit_duration_seconds` (mean first-to-last pageview; a one-page visit is 0). They count visits
-  started in the range.
+- Visits count those started in the range; a one-page visit is a bounce and lasts 0 s.
 
-**Queries and history (Change 36).** One query endpoint feeds the dashboard; the old `stats` stays
-until Change 37 replaces its reader.
+**Queries and history (Change 36).** One query endpoint feeds the dashboard (Change 37). It counts
+visits, so pageviews stored before Change 35 stay out of it until the raw purge removes them.
 - **Daily aggregates.** `analytics_daily (site_id, day, dimension, value, visitors, visits,
   pageviews, bounces, duration_ms)`; `day` is the site's local date. Dimensions: the total (`''`),
   page, entry/exit page, channel, source, the five UTM, country, region, browser and version, OS and
@@ -824,19 +819,32 @@ mount, network per interface, load, swap, checks and that host's events. The win
 there is no theme switch. Login is not a page: the login form replaces the dashboard
 whenever an API call answers `401`.
 
-**Analytics view (Change 15).** Command bar gains `+ add site` alongside `+ add host` (only on this
-view). A **SITES** ledger (same Accordion pattern as HOSTS): each row shows name, domain, today's
-pageviews and unique visitors; activating one expands in place to text ledgers for the selected
-range (today/7d/30d, a small text toggle — the one exception to "the window is fixed," since a
-day-granularity domain has no sensible single fixed window) — pageviews, unique visitors, top 10
-pages, top 10 referrers. The detail states that ranges are UTC days (muted text, e.g. `days in UTC`),
-since an operator east of UTC otherwise reads "today" as their local day (Change 19). No charts yet (§4i defers them). `+ add site` opens a dialog (name, domain)
-and on creation shows the `<script>` snippet to paste into the tracked site, copy-to-clipboard with
-an `aria-live` confirmation — the same shape as the host enrollment dialog. The dialog's copy also
-notes that a site with its own Content-Security-Policy needs to allow this server's origin in
-`script-src` and `connect-src` (a real deployment gotcha found during Change 14's live verification
-— a CSP'd site silently fails to load the snippet or send beacons, with no error visible to the
-operator here).
+**Analytics view (Changes 15, 37).** Command bar gains `+ add site` alongside `+ add host` (only on
+this view). With no site the view says so and links the dialog; otherwise it is one site's dashboard
+(Change 37, mockup approved 2026-10-26), English labels like the rest of the console:
+- **Toolbar:** site picker, period (today, yesterday, last 7 / 30 days, this / last month, last 12
+  months; default 30 days), comparison (off, previous period, a year ago; default previous), filter
+  chips with remove, and the current visitors (§4i realtime, polled every 30 s, green status dot).
+- **Key figures:** visitors (labelled visitor-days over several days), visits, pageviews, views per
+  visit, bounce rate, visit duration. A delta's arrow follows its sign; its colour says better
+  (`--status-ok`) or worse (`--status-critical`), with a hidden «better/worse» label; lower bounce
+  rate is better. A figure picks the trend's metric.
+- **Trend:** an SVG line of the current period (`--series-current`, blue) over a 10 % area, the
+  comparison dashed (`--series-compare`, grey); recessive grid; intervals hour/day for one day,
+  day/week, and month/week/day for 12 months. Crosshair and tooltip follow the pointer and the arrow
+  keys (Home/End, Escape); a visually hidden table carries the same numbers.
+- **Panels:** Sources (channels, sources, campaigns), Pages (top, entry, exit), Locations (countries,
+  regions), Devices (screen, browser, OS — with a browser or OS filter that tab lists its versions).
+  Top 10 by visitors with neutral share bars; a row adds an `is` filter to every query (one per
+  dimension). «details» opens up to 100 values with every metric and downloads the same query as CSV.
+- Filters and comparison are view state, not in the URL (architect decision 2026-10-26). A query error
+  shows the server's reason; with filters it offers «remove filters» (filters need raw days).
+- The footnote names the site's timezone, explains visitor-days and credits DB-IP (licence).
+- `+ add site` opens a dialog (name, domain) and on creation shows the `<script>` snippet to paste
+  into the tracked site, copy-to-clipboard with an `aria-live` confirmation — the same shape as the
+  host enrollment dialog. Its copy notes that a site with its own Content-Security-Policy must allow
+  this server's origin in `script-src` and `connect-src`, or the snippet silently fails (found during
+  Change 14's live verification).
 
 **EVENTS filtering (Change 12, architect decision 2026-09-22, supersedes the original "no filters"
 rule):** the original single-page design had no filters by intent, but Change 11's journald/Docker-log/

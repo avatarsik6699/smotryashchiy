@@ -1,7 +1,7 @@
 import { Button } from "@base-ui/react/button";
 import { Fragment, useEffect, useRef } from "react";
 import { useDashboard } from "../../data/DashboardContext";
-import { useSiteStats } from "../../data/useSiteStats";
+import { useAnalyticsQuery } from "../../data/useAnalytics";
 import { primaryJob, type HostBackup } from "../../domain/backup";
 import { formatAge, UNKNOWN } from "../../domain/format";
 import type { SiteDTO } from "../../domain/types";
@@ -68,14 +68,18 @@ function CalloutItem({ c }: { c: Callout }) {
 
 /** Today's numbers for one site: the analytics lesson's live values (sites have no live stream). */
 function SiteToday({ site }: { site: SiteDTO }) {
-  const today = useSiteStats(site.id, "today");
+  const today = useAnalyticsQuery(site.id, {
+    metrics: ["pageviews", "visitors"],
+    period: "today",
+  });
+  const row = today.result?.rows[0];
   const n = (v: number | undefined) =>
     today.status === "ready" ? String(v ?? 0) : UNKNOWN;
   return (
     <CalloutItem
       c={{
         subject: site.name,
-        text: `today (UTC): ${n(today.stats?.pageviews)} pageviews, ${n(today.stats?.visitors)} visitors`,
+        text: `today: ${n(row?.metrics.pageviews)} pageviews, ${n(row?.metrics.visitors)} visitors`,
       }}
     />
   );

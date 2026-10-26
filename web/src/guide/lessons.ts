@@ -354,24 +354,29 @@ export const LESSONS: Lesson[] = [
   },
   {
     id: "analytics",
-    title: "Analytics: visitors and pages",
+    title: "Analytics: visitors, sources and pages",
     summary:
-      "Pageviews count page loads; visitors count distinct anonymous visitors per day; top pages and referrers show where people go and where they came from. Days are UTC days.",
+      "The analytics view is one site's dashboard: six key figures against an earlier period, their trend, and panels of sources, pages, locations and devices. A click on any row filters everything. Days are the site's own (Moscow for a Russian site).",
     body: [
-      "The tracking snippet sends one small beacon per page view with the page path and where the visitor came from. No cookies are set and nothing identifies a person.",
-      "A visitor is estimated from a hash of the address and browser with a secret that changes every day. So one person is counted once per day, but the same person tomorrow is a new visitor, and several people behind one office or mobile network may count as one. Treat visitors as an estimate, pageviews as exact.",
-      "Top referrers list the domains visitors came from (search engines, links on other sites); visits typed directly or from apps have no referrer. Known bots and crawlers are not counted.",
-      '"today" is a UTC day: in Moscow (UTC+3) it starts at 03:00 local time.',
+      "The tracking snippet sends one small beacon per page view: the page path, where the visitor came from, campaign tags and the window width. No cookies are set and nothing identifies a person; the address is used once to place the visitor in a country and region and is never stored.",
+      "A visitor is a hash of the address and browser with a secret that changes at the site's midnight. Over several days the figure reads visitor-days: one person on three days counts three times, and several people behind one network may count as one. Treat visitors as an estimate, pageviews as exact.",
+      "A visit is a run of pageviews less than 30 minutes apart. A bounce is a visit of one page; visit duration runs from its first to its last page, so a bounce lasts 0 s.",
+      "Each figure shows its change against the comparison: the arrow follows the sign, green means better and red worse. For the bounce rate lower is better. Pick a figure to draw its trend; the dashed line is the comparison period.",
+      "Channels group sources: search, social networks, messengers, AI assistants, email, links on other sites and direct visits. Paid search and paid social need a yclid/gclid or campaign tags in the landing URL.",
+      "The last 90 days keep every visit, so filters work there. Older days keep daily totals for 25 months: they answer long ranges and year-ago comparisons, but without filters.",
     ],
     normal: [
       "A steady pattern that follows your audience (school days vs weekends for an exam-prep site).",
+      "Most visitors from organic search and direct visits; a campaign shows up under its own tag.",
     ],
     worry: [
       "Zero pageviews on a day with real traffic: the snippet stopped loading (a site change or Content-Security-Policy).",
-      "A single page or referrer with an absurd count: spam or a misbehaving client.",
+      "A single page or source with an absurd count: spam or a misbehaving client.",
+      "A sudden jump of the bounce rate together with a falling visit duration: a broken page or a slow release.",
     ],
     act: [
       "Open the site in a browser with developer tools: is `track.js` loaded and does the beacon get 204?",
+      "Filter by the suspicious source or page, then compare with the previous period to see when it started.",
     ],
   },
   {

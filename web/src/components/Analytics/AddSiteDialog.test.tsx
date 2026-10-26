@@ -35,13 +35,9 @@ beforeEach(() => {
     const url = String(input)
     if (url === '/api/sites' && init?.method === 'POST') return postResponse()
     if (url === '/api/sites') return json({ sites: sitesListed })
-    if (url.startsWith('/api/sites/') && url.includes('/stats'))
-      return json({
-        pageviews: 0,
-        visitors: 0,
-        top_pages: [],
-        top_referrers: [],
-      })
+    if (url.startsWith('/api/sites/') && url.endsWith('/query'))
+      return json({ date_range: ['2026-10-26', '2026-10-26'], timezone: 'Europe/Moscow', source: 'raw', rows: [] })
+    if (url.startsWith('/api/sites/') && url.endsWith('/realtime')) return json({ visitors: 0 })
     if (url.startsWith('/api/hosts')) return json({ hosts: [] })
     if (url.startsWith('/api/metrics')) return json({ metrics: [] })
     if (url.startsWith('/api/events')) return json({ events: [] })
@@ -99,7 +95,7 @@ describe('AddSiteDialog', () => {
     await user.click(screen.getByRole('button', { name: 'Create site' }))
     await screen.findByLabelText('Tracking snippet')
     await user.click(screen.getByRole('button', { name: 'Done' }))
-    expect(await screen.findByText('Infraege')).toBeInTheDocument()
+    expect(await screen.findByRole('option', { name: 'Infraege · infraege.ru' })).toBeInTheDocument()
   })
 
   it('shows a conflict message for a duplicate domain', async () => {

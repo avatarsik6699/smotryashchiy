@@ -13,7 +13,6 @@ type fakeRepo struct {
 	pageviews []domain.Pageview
 	visits    []domain.Visit // the visit each pageview was recorded with
 	salt      string
-	since     time.Time // the last Stats call's lower bound
 }
 
 func newFakeRepo() *fakeRepo {
@@ -41,10 +40,6 @@ func (f *fakeRepo) RecordPageview(_ context.Context, p domain.Pageview, v domain
 	f.pageviews = append(f.pageviews, p)
 	f.visits = append(f.visits, v)
 	return nil
-}
-func (f *fakeRepo) Stats(_ context.Context, _ string, since time.Time) (domain.Stats, error) {
-	f.since = since
-	return domain.Stats{}, nil
 }
 func (f *fakeRepo) DailySaltBase(context.Context) (string, error)               { return f.salt, nil }
 func (f *fakeRepo) PurgePageviews(context.Context, time.Time, int) (int, error) { return 0, nil }
@@ -237,30 +232,6 @@ func TestCollectStoresPathnameOnlyAndOnlyExternalReferrers(t *testing.T) {
 }
 
 // Ranges are UTC calendar days, today included (docs/SPEC.md §4i), including right around midnight.
-func TestStatsRangesAreUTCCalendarDays(t *testing.T) {
-	for _, c := range []struct {
-		now   time.Time
-		rng   string
-		since time.Time
-	}{
-		{time.Date(2026, 9, 23, 0, 1, 0, 0, time.UTC), "today", time.Date(2026, 9, 23, 0, 0, 0, 0, time.UTC)},
-		{time.Date(2026, 9, 22, 23, 59, 0, 0, time.UTC), "today", time.Date(2026, 9, 22, 0, 0, 0, 0, time.UTC)},
-		{time.Date(2026, 9, 23, 3, 0, 0, 0, time.FixedZone("MSK", 3*3600)), "today", time.Date(2026, 9, 23, 0, 0, 0, 0, time.UTC)},
-		{time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC), "", time.Date(2026, 9, 23, 0, 0, 0, 0, time.UTC)},
-		{time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC), "7d", time.Date(2026, 9, 17, 0, 0, 0, 0, time.UTC)},
-		{time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC), "30d", time.Date(2026, 8, 25, 0, 0, 0, 0, time.UTC)},
-	} {
-		repo := newFakeRepo()
-		svc := NewService(repo, func() time.Time { return c.now }, Options{})
-		if _, err := svc.Stats(context.Background(), "s", c.rng); err != nil {
-			t.Fatal(err)
-		}
-		if !repo.since.Equal(c.since) {
-			t.Errorf("now %s range %q: since %s, want %s", c.now, c.rng, repo.since.UTC(), c.since)
-		}
-	}
-}
-
 type fakeGeo struct{ ip string }
 
 func (g *fakeGeo) Locate(ip string) (string, string) {

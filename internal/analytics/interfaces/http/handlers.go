@@ -21,7 +21,7 @@ const maxBody = 8192
 // maxQueryBody bounds a query request: filters with long values are the large part.
 const maxQueryBody = 64 << 10
 
-// Handlers serves the site management, stats and query routes.
+// Handlers serves the site management and query routes.
 type Handlers struct {
 	service *application.Service
 	queries *application.Queries
@@ -37,7 +37,6 @@ func (h *Handlers) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/sites", h.list)
 	mux.HandleFunc("POST /api/sites", h.create)
 	mux.HandleFunc("DELETE /api/sites/{id}", h.remove)
-	mux.HandleFunc("GET /api/sites/{id}/stats", h.stats)
 	mux.HandleFunc("POST /api/sites/{id}/query", h.query)
 	mux.HandleFunc("GET /api/sites/{id}/realtime", h.realtime)
 	mux.HandleFunc("GET /api/collect/stats", h.collectStats)
@@ -77,15 +76,6 @@ func (h *Handlers) remove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
-}
-
-func (h *Handlers) stats(w http.ResponseWriter, r *http.Request) {
-	stats, err := h.service.Stats(r.Context(), r.PathValue("id"), r.URL.Query().Get("range"))
-	if err != nil {
-		apierror.Write(w, err)
-		return
-	}
-	apierror.JSON(w, http.StatusOK, stats)
 }
 
 // query answers the query API (Change 36) as JSON, or as CSV with "format":"csv".

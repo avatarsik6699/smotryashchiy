@@ -193,28 +193,3 @@ type Visit struct {
 	OSVersion      string
 	Screen         string
 }
-
-// Stats summarizes a site's pageviews over a range.
-type Stats struct {
-	Pageviews int `json:"pageviews"`
-	Visitors  int `json:"visitors"`
-	// Change 35: visits started in the range; before it nothing recorded visits.
-	Visits int `json:"visits"`
-	// BounceRate is the share of visits with one pageview, 0..1.
-	BounceRate float64 `json:"bounce_rate"`
-	// VisitDurationSeconds is the mean time from a visit's first to its last pageview; one-page
-	// visits count as 0, as in Plausible.
-	VisitDurationSeconds int           `json:"visit_duration_seconds"`
-	TopPages             []PathCount   `json:"top_pages"`
-	TopReferrers         []DomainCount `json:"top_referrers"`
-}
-
-type PathCount struct {
-	Path  string `json:"path"`
-	Count int    `json:"count"`
-}
-
-type DomainCount struct {
-	Domain string `json:"domain"`
-	Count  int    `json:"count"`
-}

@@ -166,63 +166,6 @@ func (s *Store) RecordPageview(ctx context.Context, p domain.Pageview, v domain.
 	return nil
 }
 
-// Stats aggregates raw pageviews since the given time (docs/SPEC.md §4i: all supported ranges fit
-// inside the default raw retention, so this reads raw rows, not the daily rollups).
-func (s *Store) Stats(ctx context.Context, siteID string, since time.Time) (domain.Stats, error) {
-	var stats domain.Stats
-	if err := s.db.QueryRowContext(ctx,
-		`SELECT COUNT(*), COUNT(DISTINCT visitor_hash) FROM pageviews WHERE site_id = ? AND ts >= ?`,
-		siteID, since.UnixMilli()).Scan(&stats.Pageviews, &stats.Visitors); err != nil {
-		return domain.Stats{}, fmt.Errorf("analytics: stats summary: %w", err)
-	}
-	// Change 35: visits started in the range; a one-page visit is a bounce and lasts 0 s.
-	var bounces int
-	var durationMS sql.NullFloat64
-	if err := s.db.QueryRowContext(ctx,
-		`SELECT COUNT(*), COALESCE(SUM(pageviews = 1), 0), AVG(last_at - started_at) FROM visits WHERE site_id = ? AND started_at >= ?`,
-		siteID, since.UnixMilli()).Scan(&stats.Visits, &bounces, &durationMS); err != nil {
-		return domain.Stats{}, fmt.Errorf("analytics: visit summary: %w", err)
-	}
-	if stats.Visits > 0 {
-		stats.BounceRate = float64(bounces) / float64(stats.Visits)
-		stats.VisitDurationSeconds = int(durationMS.Float64 / 1000)
-	}
-	pages, err := s.db.QueryContext(ctx,
-		`SELECT path, COUNT(*) AS c FROM pageviews WHERE site_id = ? AND ts >= ? GROUP BY path ORDER BY c DESC, path LIMIT 10`,
-		siteID, since.UnixMilli())
-	if err != nil {
-		return domain.Stats{}, fmt.Errorf("analytics: top pages: %w", err)
-	}
-	defer pages.Close()
-	stats.TopPages = []domain.PathCount{}
-	for pages.Next() {
-		var pc domain.PathCount
-		if err := pages.Scan(&pc.Path, &pc.Count); err != nil {
-			return domain.Stats{}, fmt.Errorf("analytics: scan top page: %w", err)
-		}
-		stats.TopPages = append(stats.TopPages, pc)
-	}
-	if err := pages.Err(); err != nil {
-		return domain.Stats{}, err
-	}
-	refs, err := s.db.QueryContext(ctx,
-		`SELECT referrer_domain, COUNT(*) AS c FROM pageviews WHERE site_id = ? AND ts >= ? AND referrer_domain != '' GROUP BY referrer_domain ORDER BY c DESC, referrer_domain LIMIT 10`,
-		siteID, since.UnixMilli())
-	if err != nil {
-		return domain.Stats{}, fmt.Errorf("analytics: top referrers: %w", err)
-	}
-	defer refs.Close()
-	stats.TopReferrers = []domain.DomainCount{}
-	for refs.Next() {
-		var dc domain.DomainCount
-		if err := refs.Scan(&dc.Domain, &dc.Count); err != nil {
-			return domain.Stats{}, fmt.Errorf("analytics: scan top referrer: %w", err)
-		}
-		stats.TopReferrers = append(stats.TopReferrers, dc)
-	}
-	return stats, refs.Err()
-}
-
 // DailySaltBase returns the server's analytics salt secret, generating and storing one on first
 // use (docs/SPEC.md §4i) — the same race-safe pattern as the WireGuard server key.
 func (s *Store) DailySaltBase(ctx context.Context) (string, error) {

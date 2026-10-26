@@ -1,8 +1,7 @@
-import { Accordion } from '@base-ui/react/accordion'
 import type { SiteDTO } from '../../domain/types'
 import shared from '../Dashboard/Dashboard.module.css'
 import { HelpButton } from '../Help/HelpButton'
-import { SiteRow } from './SiteRow'
+import { SiteDashboard } from './SiteDashboard'
 import styles from './AnalyticsView.module.css'
 
 interface AnalyticsViewProps {
@@ -12,7 +11,7 @@ interface AnalyticsViewProps {
   onAddSite: () => void
 }
 
-/** The Analytics view (docs/SPEC.md §5, Change 15): a SITES ledger, one row per tracked site. */
+/** The Analytics view (docs/SPEC.md §5): one site's dashboard (Change 37), a site picker on top. */
 export function AnalyticsView({ status, error, sites, onAddSite }: AnalyticsViewProps) {
   return (
     <>
@@ -29,15 +28,15 @@ export function AnalyticsView({ status, error, sites, onAddSite }: AnalyticsView
           </p>
         </section>
       )}
-      {status === 'ready' && (
-        <section className={shared.section} aria-labelledby="sites-title">
-          <div className={shared.titleRow}>
-            <h2 id="sites-title" className={shared.sectionTitle}>
-              Sites
-            </h2>
-            <HelpButton lesson="analytics" topic="site analytics" />
-          </div>
-          {sites.length === 0 ? (
+      {status === 'ready' &&
+        (sites.length === 0 ? (
+          <section className={shared.section} aria-labelledby="sites-title">
+            <div className={shared.titleRow}>
+              <h2 id="sites-title" className={shared.sectionTitle}>
+                Sites
+              </h2>
+              <HelpButton lesson="analytics" topic="site analytics" />
+            </div>
             <p className={shared.notice}>
               No sites yet.{' '}
               <button type="button" className={styles.link} onClick={onAddSite}>
@@ -45,15 +44,12 @@ export function AnalyticsView({ status, error, sites, onAddSite }: AnalyticsView
               </button>{' '}
               to get its tracking snippet.
             </p>
-          ) : (
-            <Accordion.Root className={styles.ledger}>
-              {sites.map((site) => (
-                <SiteRow key={site.id} site={site} />
-              ))}
-            </Accordion.Root>
-          )}
-        </section>
-      )}
+          </section>
+        ) : (
+          <section aria-label="Site analytics">
+            <SiteDashboard sites={sites} />
+          </section>
+        ))}
     </>
   )
 }

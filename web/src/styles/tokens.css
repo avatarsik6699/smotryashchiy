@@ -21,6 +21,10 @@
   --status-critical: #de7b7f;
   --status-unreachable: #617074;
 
+  /* Analytics trend (Change 37): the current period and its comparison; never status colours. */
+  --series-current: #5f80e3;
+  --series-compare: #97a3a5;
+
   --font: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, SFMono-Regular, Consolas, monospace;
   --radius: 2px;
 
@@ -52,5 +56,8 @@
     --status-warn: #84601d;
     --status-critical: #aa3238;
     --status-unreachable: #5d6b6f;
+
+    --series-current: #3b5cc4;
+    --series-compare: #6d797b;
   }
 }

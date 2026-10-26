@@ -35,6 +35,18 @@ func newTestServer(t *testing.T) (*httptest.Server, *application.Service) {
 	return srv, svc
 }
 
+// storedPageviews reads today's pageviews of a site through the query API.
+func storedPageviews(t *testing.T, base, siteID string) int {
+	t.Helper()
+	resp := post(t, base+"/api/sites/"+siteID+"/query", "", []byte(`{"metrics":["pageviews"],"period":"today"}`))
+	defer resp.Body.Close()
+	var res domain.QueryResult
+	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil || len(res.Rows) != 1 {
+		t.Fatalf("query = %d %+v (%v)", resp.StatusCode, res, err)
+	}
+	return int(res.Rows[0].Metrics["pageviews"])
+}
+
 func post(t *testing.T, url, origin string, body []byte) *http.Response {
 	t.Helper()
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
@@ -67,12 +79,9 @@ func TestCollectEndToEndStoresAPageviewAndAnswers204(t *testing.T) {
 		t.Fatalf("CORS header = %q, want the matching origin echoed back", got)
 	}
 
-	stats, err := svc.Stats(t.Context(), site.ID, "today")
-	if err != nil {
-		t.Fatalf("Stats: %v", err)
-	}
-	if stats.Pageviews != 1 {
-		t.Fatalf("Pageviews = %d, want 1", stats.Pageviews)
+	pageviews := storedPageviews(t, srv.URL, site.ID)
+	if pageviews != 1 {
+		t.Fatalf("Pageviews = %d, want 1", pageviews)
 	}
 }
 
@@ -121,12 +130,9 @@ func TestCollectStoresOnlyFromTheSitesOwnOrigin(t *testing.T) {
 			if resp.StatusCode != http.StatusNoContent {
 				t.Fatalf("status = %d, want 204", resp.StatusCode)
 			}
-			stats, err := svc.Stats(t.Context(), site.ID, "today")
-			if err != nil {
-				t.Fatalf("Stats: %v", err)
-			}
-			if stats.Pageviews != c.want {
-				t.Fatalf("origin %q: Pageviews = %d, want %d", c.origin, stats.Pageviews, c.want)
+			pageviews := storedPageviews(t, srv.URL, site.ID)
+			if pageviews != c.want {
+				t.Fatalf("origin %q: Pageviews = %d, want %d", c.origin, pageviews, c.want)
 			}
 		})
 	}
@@ -145,14 +151,11 @@ func TestCollectRateLimitsPerSourceIP(t *testing.T) {
 	for range 12 {
 		post(t, srv.URL+"/api/collect", "https://a.example", body)
 	}
-	stats, err := svc.Stats(t.Context(), site.ID, "today")
-	if err != nil {
-		t.Fatalf("Stats: %v", err)
+	pageviews := storedPageviews(t, srv.URL, site.ID)
+	if pageviews >= 12 {
+		t.Fatalf("Pageviews = %d, want fewer than 12 (rate limit should have dropped some)", pageviews)
 	}
-	if stats.Pageviews >= 12 {
-		t.Fatalf("Pageviews = %d, want fewer than 12 (rate limit should have dropped some)", stats.Pageviews)
-	}
-	if stats.Pageviews == 0 {
+	if pageviews == 0 {
 		t.Fatal("want at least the burst allowance stored")
 	}
 }
@@ -200,12 +203,9 @@ func TestCollectStillAcceptsBeaconsFromOlderSnippets(t *testing.T) {
 	}
 	old := `{"site":"` + site.ID + `","url":"/docs","referrer":"","title":"Docs","screen":"1920x1080","language":"ru-RU"}`
 	post(t, srv.URL+"/api/collect", "https://a.example", []byte(old))
-	stats, err := svc.Stats(t.Context(), site.ID, "today")
-	if err != nil {
-		t.Fatalf("Stats: %v", err)
-	}
-	if stats.Pageviews != 1 {
-		t.Fatalf("Pageviews = %d, want the old-format beacon stored", stats.Pageviews)
+	pageviews := storedPageviews(t, srv.URL, site.ID)
+	if pageviews != 1 {
+		t.Fatalf("Pageviews = %d, want the old-format beacon stored", pageviews)
 	}
 }
 

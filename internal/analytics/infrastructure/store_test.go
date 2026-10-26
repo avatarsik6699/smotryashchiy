@@ -68,19 +68,15 @@ func TestSiteExistsAndDeleteCascadesPageviews(t *testing.T) {
 	if err := s.DeleteSite(ctx, site.ID); err != nil {
 		t.Fatalf("DeleteSite: %v", err)
 	}
-	stats, err := s.Stats(ctx, site.ID, now.Add(-time.Hour))
-	if err != nil {
-		t.Fatalf("Stats after delete: %v", err)
-	}
-	if stats.Pageviews != 0 {
-		t.Fatalf("pageviews survived site deletion: %+v", stats)
+	if n := countRows(t, s, "pageviews"); n != 0 {
+		t.Fatalf("%d pageviews survived site deletion", n)
 	}
 	if err := s.DeleteSite(ctx, site.ID); err == nil {
 		t.Fatal("want a not-found error deleting an already-deleted site")
 	}
 }
 
-func TestStatsAggregatesPageviewsAndTopLists(t *testing.T) {
+func TestRawRowsCountTheWindowByPage(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 	now := time.Now()
@@ -89,32 +85,53 @@ func TestStatsAggregatesPageviewsAndTopLists(t *testing.T) {
 		t.Fatalf("CreateSite: %v", err)
 	}
 	rows := []domain.Pageview{
-		{SiteID: site.ID, TS: now, Path: "/home", ReferrerDomain: "google.com", VisitorHash: "v1"},
-		{SiteID: site.ID, TS: now, Path: "/home", ReferrerDomain: "google.com", VisitorHash: "v2"},
-		{SiteID: site.ID, TS: now, Path: "/about", ReferrerDomain: "", VisitorHash: "v1"},
-		{SiteID: site.ID, TS: now.Add(-48 * time.Hour), Path: "/old", VisitorHash: "v3"}, // outside the 24h window below
+		{SiteID: site.ID, TS: now, Path: "/home", VisitorHash: "v1"},
+		{SiteID: site.ID, TS: now, Path: "/home", VisitorHash: "v2"},
+		{SiteID: site.ID, TS: now, Path: "/about", VisitorHash: "v1"},
+		{SiteID: site.ID, TS: now.Add(-48 * time.Hour), Path: "/old", VisitorHash: "v3"}, // outside the window below
 	}
 	for _, r := range rows {
 		if err := s.RecordPageview(ctx, r, direct); err != nil {
 			t.Fatalf("RecordPageview: %v", err)
 		}
 	}
-	stats, err := s.Stats(ctx, site.ID, now.Add(-24*time.Hour))
+	from, to := now.Add(-24*time.Hour), now.Add(time.Minute)
+	if got := total(t, s, site.ID, from, to); got.Pageviews != 3 || got.Visitors != 2 || got.Visits != 2 {
+		t.Fatalf("total = %+v, want 3 pageviews of 2 visitors in 2 visits", got)
+	}
+	pages, err := s.RawRows(ctx, site.ID, domain.DimensionPage, from, to, nil)
 	if err != nil {
-		t.Fatalf("Stats: %v", err)
+		t.Fatal(err)
 	}
-	if stats.Pageviews != 3 {
-		t.Fatalf("Pageviews = %d, want 3 (the old row must be excluded)", stats.Pageviews)
+	byPath := map[string]domain.Counts{}
+	for _, r := range pages {
+		byPath[r.Value] = r.Counts
 	}
-	if stats.Visitors != 2 {
-		t.Fatalf("Visitors = %d, want 2 distinct visitor hashes", stats.Visitors)
+	if byPath["/home"].Pageviews != 2 || byPath["/home"].Visitors != 2 || byPath["/about"].Visits != 1 || len(byPath) != 2 {
+		t.Fatalf("pages = %+v", byPath)
 	}
-	if len(stats.TopPages) == 0 || stats.TopPages[0].Path != "/home" || stats.TopPages[0].Count != 2 {
-		t.Fatalf("TopPages = %+v", stats.TopPages)
+}
+
+// total is the raw total of [from, to).
+func total(t *testing.T, s *Store, siteID string, from, to time.Time) domain.Counts {
+	t.Helper()
+	rows, err := s.RawRows(context.Background(), siteID, "", from, to, nil)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if len(stats.TopReferrers) != 1 || stats.TopReferrers[0].Domain != "google.com" || stats.TopReferrers[0].Count != 2 {
-		t.Fatalf("TopReferrers = %+v (empty referrer must be excluded)", stats.TopReferrers)
+	if len(rows) == 0 {
+		return domain.Counts{}
 	}
+	return rows[0].Counts
+}
+
+func countRows(t *testing.T, s *Store, table string) int {
+	t.Helper()
+	var n int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM ` + table).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return n
 }
 
 func TestDailySaltBaseIsGeneratedOnceAndStable(t *testing.T) {
@@ -158,12 +175,8 @@ func TestPurgeRemovesOldPageviews(t *testing.T) {
 	if n, err := s.PurgePageviews(ctx, day.Add(24*time.Hour), 100); err != nil || n != 0 {
 		t.Fatalf("second purge = %d, %v; want nothing left", n, err)
 	}
-	stats, err := s.Stats(ctx, site.ID, day.Add(-time.Hour))
-	if err != nil {
-		t.Fatalf("Stats: %v", err)
-	}
-	if stats.Pageviews != 0 {
-		t.Fatalf("raw pageviews survived purge: %+v", stats)
+	if n := countRows(t, s, "pageviews") + countRows(t, s, "visits"); n != 0 {
+		t.Fatalf("%d raw rows survived the purge", n)
 	}
 }
 
@@ -210,16 +223,10 @@ func TestRecordPageviewGroupsVisits(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	stats, err := s.Stats(ctx, site.ID, start)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if stats.Pageviews != 4 || stats.Visitors != 2 || stats.Visits != 3 {
-		t.Fatalf("pageviews/visitors/visits = %d/%d/%d, want 4/2/3", stats.Pageviews, stats.Visitors, stats.Visits)
-	}
-	// two of three visits have one page; the mean duration is (600 + 0 + 0) / 3 s
-	if stats.BounceRate < 0.666 || stats.BounceRate > 0.667 || stats.VisitDurationSeconds != 200 {
-		t.Fatalf("bounce %.3f duration %d, want 0.667 and 200", stats.BounceRate, stats.VisitDurationSeconds)
+	// two of three visits have one page; the durations are 600 + 0 + 0 s
+	got := total(t, s, site.ID, start, start.Add(time.Hour))
+	if want := (domain.Counts{Visitors: 2, Visits: 3, Pageviews: 4, Bounces: 2, DurationMS: 600_000}); got != want {
+		t.Fatalf("total = %+v, want %+v", got, want)
 	}
 	rows, err := s.db.QueryContext(ctx, `SELECT visitor_hash, entry_path, exit_path, pageviews, source, channel, country,
 		region, screen, utm_source, browser_version, os_version FROM visits ORDER BY started_at`)
@@ -227,22 +234,22 @@ func TestRecordPageviewGroupsVisits(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer rows.Close()
-	var got []string
+	var visits []string
 	for rows.Next() {
 		var hash, entry, exit, source, channel, country, region, screen, utm, bv, ov string
 		var n int
 		if err := rows.Scan(&hash, &entry, &exit, &n, &source, &channel, &country, &region, &screen, &utm, &bv, &ov); err != nil {
 			t.Fatal(err)
 		}
-		got = append(got, fmt.Sprintf("%s %s→%s %d %s/%s %s/%s %s %s %s/%s", hash, entry, exit, n, source, channel, country, region, screen, utm, bv, ov))
+		visits = append(visits, fmt.Sprintf("%s %s→%s %d %s/%s %s/%s %s %s %s/%s", hash, entry, exit, n, source, channel, country, region, screen, utm, bv, ov))
 	}
 	want := []string{
 		"a /ege→/ege/16 2 Яндекс/organic_search RU/Moscow mobile vk 131/14",
 		"b /→/ 1 /direct /   /",
 		"a /courses→/courses 1 /direct /   /",
 	}
-	if strings.Join(got, "\n") != strings.Join(want, "\n") {
-		t.Fatalf("visits:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	if strings.Join(visits, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("visits:\n%s\nwant:\n%s", strings.Join(visits, "\n"), strings.Join(want, "\n"))
 	}
 	var orphans int
 	if err := s.db.QueryRow(`SELECT COUNT(*) FROM pageviews WHERE visit_id IS NULL`).Scan(&orphans); err != nil || orphans != 0 {
@@ -250,8 +257,9 @@ func TestRecordPageviewGroupsVisits(t *testing.T) {
 	}
 }
 
-// Pageviews stored before Change 35 have no visit: they still count as pageviews and visitors.
-func TestPageviewsWithoutAVisitStillCount(t *testing.T) {
+// Pageviews stored before Change 35 have no visit. The query API counts visits, so they stay out of
+// it (the dashboard starts with the release of Change 35) until the raw purge removes them.
+func TestPageviewsWithoutAVisitStayOutOfQueries(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 	now := time.Date(2026, 10, 26, 9, 0, 0, 0, time.UTC)
@@ -262,9 +270,11 @@ func TestPageviewsWithoutAVisitStillCount(t *testing.T) {
 	if _, err := s.db.Exec(`INSERT INTO pageviews (site_id, ts, path, visitor_hash) VALUES (?, ?, '/', 'old')`, site.ID, now.UnixMilli()); err != nil {
 		t.Fatal(err)
 	}
-	stats, err := s.Stats(ctx, site.ID, now.Add(-time.Hour))
-	if err != nil || stats.Pageviews != 1 || stats.Visitors != 1 || stats.Visits != 0 {
-		t.Fatalf("stats = %+v, %v", stats, err)
+	if got := total(t, s, site.ID, now.Add(-time.Hour), now.Add(time.Hour)); got != (domain.Counts{}) {
+		t.Fatalf("total = %+v, want nothing", got)
+	}
+	if n, err := s.PurgePageviews(ctx, now.Add(time.Hour), 10); err != nil || n != 1 {
+		t.Fatalf("purge = %d (%v), want the old pageview gone", n, err)
 	}
 	if site.Timezone != domain.DefaultTimezone {
 		t.Fatalf("timezone = %q, want the default", site.Timezone)

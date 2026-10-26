@@ -9,7 +9,7 @@
 | Change | `36` |
 | Slug | `analytics-queries-history` |
 | Title | Analytics queries and history: one query API, daily aggregates, comparison |
-| Status | `active` |
+| Status | `archived` |
 | Branch | `feature/36-analytics-queries-history` |
 
 ---

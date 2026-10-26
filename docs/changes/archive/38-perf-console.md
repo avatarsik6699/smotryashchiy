@@ -9,7 +9,7 @@
 | Change | `38` |
 | Slug | `perf-console` |
 | Title | Console performance: compression, connection pool, bounded reads, fewer renders |
-| Status | `active` |
+| Status | `archived` |
 | Branch | `feature/38-perf-console` |
 
 ---

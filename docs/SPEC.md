@@ -41,8 +41,8 @@ looks healthy; observe, and act only through the closed operator command set of 
 | Single Go binary: `server`, `agent`, `admin` modes | Arbitrary remote actions, deployment, config mutation of targets (the closed operator command set of §4j is the one exception, Change 30) |
 | Host metrics via own agent (CPU, RAM, swap, disk, network, load, uptime) | Adapters/plugins for third-party tools |
 | Docker container metrics via the local socket | Multi-user / RBAC |
-| Built-in uptime checks: HTTP, TCP, TLS expiry | IP geolocation / country breakdown (fast-follow after Change 14/15) |
-| Site visitor analytics: JS snippet, cookieless (Changes 14–15) | |
+| Built-in uptime checks: HTTP, TCP, TLS expiry | City-level geolocation (country and region only, Change 35) |
+| Site visitor analytics: JS snippet, cookieless (Changes 14–15); visits, sources, country/region, devices (Change 35) | |
 | Log/event collection: journald, Docker logs | Second notification channel |
 | Security signals: fail2ban bans and jail status | Distributed / high-cardinality storage |
 | ~~Alert rules, firing → resolved lifecycle, Telegram~~ *(deferred, see §7)* | Off-host backup is an operator recipe, not a built-in service (§4f, Change 29) |
@@ -498,7 +498,8 @@ filtering close to free, which a server log can only approximate by parsing `Use
 **Privacy, by construction (decided, not configurable):** no cookie, no `localStorage`, no
 persistent visitor identifier ever leaves the browser or gets stored. A visitor's identity for
 grouping purposes is `sha256(daily_salt + site_id + request_IP + User-Agent)`, truncated to 16
-bytes; `daily_salt` rotates every UTC day (derived from a server-held secret, never exposed) so the
+bytes; `daily_salt` rotates every day at the site's local midnight (its `timezone`, Change 35; UTC
+before it) and is derived from a server-held secret, never exposed, so the
 same real visitor gets an unlinkable hash on the next day — this is the one thing that makes
 "unique visitors" and "pageviews per visit" computable without tracking anyone across days. The raw
 IP is used only to compute this hash for the current request and is never stored. `referrer` is
@@ -562,10 +563,11 @@ Collect counts every outcome in memory — `stored`, `rate_limited`, `malformed`
 (session required, `{"outcomes":{...}}`, reset on restart); a storage error is also logged without
 IP or User-Agent. The public answer stays `204` for every outcome.
 
-**Storage.** `sites (id, name, domain, created_at)`. `pageviews (id, site_id, ts, path,
-referrer_domain, visitor_hash, browser, os, device)`, with their own TTL
-(`SMOTRYASHCHIY_ANALYTICS_RETENTION_DAYS`, default 30, Change 28) apart from the raw telemetry TTL of
-§4.5, so trimming host metrics never cuts the stats range. Every stats range (at most 30 days) fits
+**Storage.** `sites (id, name, domain, timezone, created_at)`. `pageviews (id, site_id, ts, path,
+referrer_domain, visitor_hash, browser, os, device, visit_id, hostname)` and `visits` (below), with
+their own TTL (`SMOTRYASHCHIY_ANALYTICS_RETENTION_DAYS`, default 90 since Change 35, 30 before;
+Change 28) apart from the raw telemetry TTL of §4.5, so trimming host metrics never cuts the stats
+range. Every stats range (at most 30 days) fits
 inside the default, so stats read raw pageviews only. The daily rollup table `pageview_rollups_daily` that Change 14
 added was written hourly and never read; Change 20 removed its job and dropped the table with a
 forward-only migration (every row was derivable from raw pageviews). Longer ranges would bring a
@@ -582,10 +584,51 @@ i.e. the last 7 or 30 calendar days including today. `visitors` over several day
 distinct daily visitor hashes, so one person visiting on three days counts three times (the hash
 rotates daily by design).
 
-**Deferred, not in Changes 14–15:** IP geolocation/country breakdown (needs a GeoIP dependency,
-§1.3); live pageview counts over the WebSocket stream (§4.6) — Change 15's Analytics view uses the
-same 60 s full-refresh cadence as the rest of the dashboard; richer charts (time-series, referrer/
-device breakdowns as bars) beyond the text ledgers in §5.
+**Collection v2 (Change 35, architect decisions 2026-10-26).** The first of three steps to a
+Plausible / Umami level of reports. Change 36 adds queries, daily aggregates for 25 months and
+period comparison; Change 37 adds the dashboard. The server still derives everything it can.
+- **Beacon v2.** `{"v":2, …, "utm":{source,medium,campaign,content,term}, "paid":bool, "w":<window
+  width>, "h":"<hostname>"}`. Every v2 field is optional, so the original beacon stays complete and an
+  old snippet needs no update.
+  - UTM and `paid` come from the first pageview of a page load only. `paid` means a `yclid`/`gclid` in
+    the landing URL; its value is never sent.
+  - The referrer is sent as an origin (audit A5).
+  - A UTM value is lowercased and kept when it is at most 100 bytes of `[a-z0-9._-]`; otherwise it is
+    stored as `(invalid)`, since free text can carry personal data.
+  - `w` becomes a screen group: mobile < 576, tablet < 992, laptop < 1440, desktop. The exact width is
+    not stored.
+  - `h` is kept when it is the site's domain or `www.` plus it, else the Origin's hostname.
+- **Visits.** A visit is the same daily visitor hash with less than 30 minutes between pageviews. Like
+  Plausible's, it ends when the salt turns over.
+  - It records the start and last time, the entry and exit path and the pageview count.
+  - It also keeps what its first pageview knew: hostname, referrer, source, channel, the five UTM
+    values, the paid flag, country, region, browser and major version, OS and version, device, screen
+    group.
+  - A pageview is stored inside its visit in one transaction. Pageviews stored before Change 35 have no
+    visit.
+- **Sources and channels.** A rule list maps the referrer host, UTM and paid flag to a normalized source
+  name and one channel; the first match wins.
+  - Channels: paid search, organic search, paid social, social, messengers, AI assistants, email,
+    referral, direct.
+  - The dictionary is written for a Russian-speaking audience: Яндекс, Google, Mail.ru, VK, OK, Дзен,
+    Telegram, MAX, YouTube, ChatGPT, Алиса, Gemini and others. An assistant or a mail client on a
+    search engine's domain precedes the engine.
+- **Geography.** An optional MMDB file (`SMOTRYASHCHIY_GEOIP_PATH`, DB-IP City Lite, CC BY 4.0) gives the
+  ISO country code and the English name of the first subdivision. DB-IP Lite has no ISO 3166-2 region
+  codes.
+  - The IP is used for the lookup at intake only.
+  - No file means no geography; everything else still works.
+  - A file replaced on disk is reopened within a minute, without a restart.
+  - Any page that shows these results must link to db-ip.com (the licence).
+- **Versions.** Browser major version and the OS version the User-Agent still carries. Chromium
+  freezes macOS at 10.15 and reduced Android UAs at 10, and Windows 10 and 11 both say NT 10.0
+  ("10/11"), so an OS version is a hint.
+- `GET /api/sites/{id}/stats` keeps its shape and adds `visits`, `bounce_rate` (0..1) and
+  `visit_duration_seconds` (mean first-to-last pageview; a one-page visit is 0). They count visits
+  started in the range.
+
+**Deferred:** live pageview counts over the WebSocket stream (§4.6); engagement pings, Web Vitals,
+404 signals, search consoles and a SEO audit (stages S5–S7 of the 2026-10-14 plan, later decisions).
 
 ## 4j. Operator console (Change 30, architect decision 2026-10-24)
 

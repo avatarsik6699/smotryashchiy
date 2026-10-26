@@ -25,15 +25,29 @@ type Repository interface {
 	ListSites(ctx context.Context) ([]domain.Site, error)
 	SiteExists(ctx context.Context, id string) (domain.Site, bool, error)
 	DeleteSite(ctx context.Context, id string) error
-	InsertPageview(ctx context.Context, p domain.Pageview) error
+	// RecordPageview stores a pageview within its visit (Change 35): the latest visit of the same
+	// site and visitor hash whose last pageview is less than domain.VisitIdle old, else a new visit
+	// described by v. One transaction, so a crash never leaves a pageview without its visit.
+	RecordPageview(ctx context.Context, p domain.Pageview, v domain.Visit) error
 	Stats(ctx context.Context, siteID string, since time.Time) (domain.Stats, error)
 	DailySaltBase(ctx context.Context) (string, error)
 	PurgePageviews(ctx context.Context, before time.Time, limit int) (int, error)
 }
 
-// Options tune retention; the zero value disables purging.
+// Geo places a visitor by IP (Change 35): an ISO country code and a region name, "" when unknown.
+// The IP is used for this lookup only and never stored.
+type Geo interface {
+	Locate(ip string) (country, region string)
+}
+
+type noGeo struct{}
+
+func (noGeo) Locate(string) (string, string) { return "", "" }
+
+// Options tune retention and geography; the zero value disables purging and places nobody.
 type Options struct {
 	Retention time.Duration
+	Geo       Geo
 }
 
 // Collect outcomes counted since the server started (docs/SPEC.md §4i, Change 26): the public
@@ -61,6 +75,9 @@ type Service struct {
 
 // NewService wires the service.
 func NewService(repo Repository, now func() time.Time, opts Options) *Service {
+	if opts.Geo == nil {
+		opts.Geo = noGeo{}
+	}
 	return &Service{repo: repo, now: now, opts: opts, counts: map[string]int64{}}
 }
 
@@ -150,20 +167,41 @@ func (s *Service) collect(ctx context.Context, b domain.Beacon, clientIP, userAg
 	if !OriginMatchesSite(originHost, site.Domain) {
 		return false, OutcomeOriginMismatch, nil
 	}
-	hash, err := s.visitorHash(ctx, site.ID, clientIP, userAgent)
+	now := s.now()
+	hash, err := s.visitorHash(ctx, site, clientIP, userAgent, now)
 	if err != nil {
 		return false, OutcomeError, err
 	}
 	browser, os, device := parseUserAgent(userAgent)
-	err = s.repo.InsertPageview(ctx, domain.Pageview{
+	referrer := externalReferrer(b.Referrer, site.Domain)
+	source, channel := classify(referrer, b.UTM, b.Paid)
+	country, region := s.opts.Geo.Locate(clientIP)
+	browserMajor, osVersion := uaVersions(userAgent, browser, os)
+	// the page's own host when it belongs to the site, else the Origin it came from
+	hostname := strings.ToLower(originHost)
+	if OriginMatchesSite(b.Hostname, site.Domain) {
+		hostname = b.Hostname
+	}
+	err = s.repo.RecordPageview(ctx, domain.Pageview{
 		SiteID:         site.ID,
-		TS:             s.now(),
+		TS:             now,
 		Path:           pathOnly(b.URL),
-		ReferrerDomain: externalReferrer(b.Referrer, site.Domain),
+		ReferrerDomain: referrer,
 		VisitorHash:    hash,
 		Browser:        browser,
 		OS:             os,
 		Device:         device,
+		Hostname:       hostname,
+	}, domain.Visit{
+		Source:         source,
+		Channel:        channel,
+		UTM:            b.UTM,
+		Paid:           b.Paid,
+		Country:        country,
+		Region:         region,
+		BrowserVersion: browserMajor,
+		OSVersion:      osVersion,
+		Screen:         domain.ScreenGroup(b.Width),
 	})
 	if err != nil {
 		return false, OutcomeError, err
@@ -180,20 +218,21 @@ func OriginMatchesSite(originHost, siteDomain string) bool {
 }
 
 // visitorHash derives a daily-rotating, salted, unlinkable-across-days visitor identity
-// (docs/SPEC.md §4i): sha256(sha256(secret|UTC-day) | site | IP | UA), truncated to 16 bytes. The
+// (docs/SPEC.md §4i): sha256(sha256(secret|site-day) | site | IP | UA), truncated to 16 bytes. The
+// day is the site's local date (Change 35), so a visitor's day and the report's day agree. The
 // raw IP is used only for this one computation and is never stored.
-func (s *Service) visitorHash(ctx context.Context, siteID, ip, ua string) (string, error) {
+func (s *Service) visitorHash(ctx context.Context, site domain.Site, ip, ua string, now time.Time) (string, error) {
 	base, err := s.repo.DailySaltBase(ctx)
 	if err != nil {
 		return "", err
 	}
-	day := s.now().UTC().Format("2006-01-02")
+	day := now.In(site.Location()).Format("2006-01-02")
 	daily := sha256.Sum256([]byte(base + "|" + day))
-	visitor := sha256.Sum256([]byte(hex.EncodeToString(daily[:]) + "|" + siteID + "|" + ip + "|" + ua))
+	visitor := sha256.Sum256([]byte(hex.EncodeToString(daily[:]) + "|" + site.ID + "|" + ip + "|" + ua))
 	return hex.EncodeToString(visitor[:16]), nil
 }
 
-// Purge deletes pageviews older than the retention window, in bounded batches.
+// Purge deletes pageviews and visits older than the retention window, in bounded batches.
 func (s *Service) Purge(ctx context.Context) error {
 	if s.opts.Retention <= 0 {
 		return nil

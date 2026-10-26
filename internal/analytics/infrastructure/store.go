@@ -36,7 +36,10 @@ func (s *Store) CreateSite(ctx context.Context, n domain.NewSite, now time.Time)
 	if _, err := rand.Read(buf); err != nil {
 		return domain.Site{}, fmt.Errorf("analytics: generate site id: %w", err)
 	}
-	site := domain.Site{ID: hex.EncodeToString(buf), Name: n.Name, Domain: n.Domain, CreatedAt: now.UTC().Truncate(time.Millisecond)}
+	if n.Timezone == "" {
+		n.Timezone = domain.DefaultTimezone
+	}
+	site := domain.Site{ID: hex.EncodeToString(buf), Name: n.Name, Domain: n.Domain, Timezone: n.Timezone, CreatedAt: now.UTC().Truncate(time.Millisecond)}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return domain.Site{}, fmt.Errorf("analytics: begin: %w", err)
@@ -49,8 +52,8 @@ func (s *Store) CreateSite(ctx context.Context, n domain.NewSite, now time.Time)
 	if count >= domain.MaxSites {
 		return domain.Site{}, apierror.Conflict(fmt.Sprintf("site limit reached (%d)", domain.MaxSites))
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO sites (id, name, domain, created_at) VALUES (?, ?, ?, ?)`,
-		site.ID, site.Name, site.Domain, site.CreatedAt.UnixMilli()); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO sites (id, name, domain, timezone, created_at) VALUES (?, ?, ?, ?, ?)`,
+		site.ID, site.Name, site.Domain, site.Timezone, site.CreatedAt.UnixMilli()); err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
 			return domain.Site{}, apierror.Conflict("a site with this domain already exists")
 		}
@@ -64,7 +67,7 @@ func (s *Store) CreateSite(ctx context.Context, n domain.NewSite, now time.Time)
 
 // ListSites returns every site ordered by name.
 func (s *Store) ListSites(ctx context.Context) ([]domain.Site, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, name, domain, created_at FROM sites ORDER BY name, id`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, name, domain, timezone, created_at FROM sites ORDER BY name, id`)
 	if err != nil {
 		return nil, fmt.Errorf("analytics: list sites: %w", err)
 	}
@@ -73,7 +76,7 @@ func (s *Store) ListSites(ctx context.Context) ([]domain.Site, error) {
 	for rows.Next() {
 		var site domain.Site
 		var created int64
-		if err := rows.Scan(&site.ID, &site.Name, &site.Domain, &created); err != nil {
+		if err := rows.Scan(&site.ID, &site.Name, &site.Domain, &site.Timezone, &created); err != nil {
 			return nil, fmt.Errorf("analytics: scan site: %w", err)
 		}
 		site.CreatedAt = time.UnixMilli(created).UTC()
@@ -87,8 +90,8 @@ func (s *Store) ListSites(ctx context.Context) ([]domain.Site, error) {
 func (s *Store) SiteExists(ctx context.Context, id string) (domain.Site, bool, error) {
 	var site domain.Site
 	var created int64
-	err := s.db.QueryRowContext(ctx, `SELECT id, name, domain, created_at FROM sites WHERE id = ?`, id).
-		Scan(&site.ID, &site.Name, &site.Domain, &created)
+	err := s.db.QueryRowContext(ctx, `SELECT id, name, domain, timezone, created_at FROM sites WHERE id = ?`, id).
+		Scan(&site.ID, &site.Name, &site.Domain, &site.Timezone, &created)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.Site{}, false, nil
 	}
@@ -111,13 +114,54 @@ func (s *Store) DeleteSite(ctx context.Context, id string) error {
 	return nil
 }
 
-// InsertPageview stores one observation.
-func (s *Store) InsertPageview(ctx context.Context, p domain.Pageview) error {
-	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO pageviews (site_id, ts, path, referrer_domain, visitor_hash, browser, os, device) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		p.SiteID, p.TS.UnixMilli(), p.Path, p.ReferrerDomain, p.VisitorHash, p.Browser, p.OS, p.Device)
+// RecordPageview stores one observation inside its visit (Change 35, docs/SPEC.md §4i): the
+// visitor's latest visit continues while its last pageview is less than domain.VisitIdle old;
+// otherwise v opens a new visit at this pageview.
+func (s *Store) RecordPageview(ctx context.Context, p domain.Pageview, v domain.Visit) error {
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
+		return fmt.Errorf("analytics: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	ts := p.TS.UnixMilli()
+	var visitID string
+	err = tx.QueryRowContext(ctx,
+		`SELECT id FROM visits WHERE site_id = ? AND visitor_hash = ? AND last_at > ? ORDER BY last_at DESC LIMIT 1`,
+		p.SiteID, p.VisitorHash, ts-domain.VisitIdle.Milliseconds()).Scan(&visitID)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		buf := make([]byte, 12)
+		if _, err := rand.Read(buf); err != nil {
+			return fmt.Errorf("analytics: generate visit id: %w", err)
+		}
+		visitID = hex.EncodeToString(buf)
+		if _, err := tx.ExecContext(ctx, `INSERT INTO visits (id, site_id, visitor_hash, started_at, last_at,
+			entry_path, exit_path, pageviews, hostname, referrer_domain, source, channel,
+			utm_source, utm_medium, utm_campaign, utm_content, utm_term, paid, country, region,
+			browser, browser_version, os, os_version, device, screen)
+			VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			visitID, p.SiteID, p.VisitorHash, ts, ts, p.Path, p.Path, p.Hostname, p.ReferrerDomain,
+			v.Source, v.Channel, v.UTM.Source, v.UTM.Medium, v.UTM.Campaign, v.UTM.Content, v.UTM.Term,
+			v.Paid, v.Country, v.Region, p.Browser, v.BrowserVersion, p.OS, v.OSVersion, p.Device,
+			v.Screen); err != nil {
+			return fmt.Errorf("analytics: open visit: %w", err)
+		}
+	case err != nil:
+		return fmt.Errorf("analytics: find visit: %w", err)
+	default:
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE visits SET last_at = ?, exit_path = ?, pageviews = pageviews + 1 WHERE id = ?`,
+			ts, p.Path, visitID); err != nil {
+			return fmt.Errorf("analytics: continue visit: %w", err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO pageviews (site_id, ts, path, referrer_domain, visitor_hash, browser, os, device, visit_id, hostname) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		p.SiteID, ts, p.Path, p.ReferrerDomain, p.VisitorHash, p.Browser, p.OS, p.Device, visitID, p.Hostname); err != nil {
 		return fmt.Errorf("analytics: insert pageview: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("analytics: commit pageview: %w", err)
 	}
 	return nil
 }
@@ -130,6 +174,18 @@ func (s *Store) Stats(ctx context.Context, siteID string, since time.Time) (doma
 		`SELECT COUNT(*), COUNT(DISTINCT visitor_hash) FROM pageviews WHERE site_id = ? AND ts >= ?`,
 		siteID, since.UnixMilli()).Scan(&stats.Pageviews, &stats.Visitors); err != nil {
 		return domain.Stats{}, fmt.Errorf("analytics: stats summary: %w", err)
+	}
+	// Change 35: visits started in the range; a one-page visit is a bounce and lasts 0 s.
+	var bounces int
+	var durationMS sql.NullFloat64
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*), COALESCE(SUM(pageviews = 1), 0), AVG(last_at - started_at) FROM visits WHERE site_id = ? AND started_at >= ?`,
+		siteID, since.UnixMilli()).Scan(&stats.Visits, &bounces, &durationMS); err != nil {
+		return domain.Stats{}, fmt.Errorf("analytics: visit summary: %w", err)
+	}
+	if stats.Visits > 0 {
+		stats.BounceRate = float64(bounces) / float64(stats.Visits)
+		stats.VisitDurationSeconds = int(durationMS.Float64 / 1000)
 	}
 	pages, err := s.db.QueryContext(ctx,
 		`SELECT path, COUNT(*) AS c FROM pageviews WHERE site_id = ? AND ts >= ? GROUP BY path ORDER BY c DESC, path LIMIT 10`,
@@ -192,8 +248,9 @@ func (s *Store) DailySaltBase(ctx context.Context) (string, error) {
 	return value, nil
 }
 
-// PurgePageviews deletes up to limit pageviews older than before (bounded so the single writer is
-// never held long).
+// PurgePageviews deletes up to limit pageviews older than before, then up to limit visits whose
+// last pageview is older (Change 35; their remaining pageviews go with them). Bounded so the single
+// writer is never held long; the count is both together, 0 once nothing is left.
 func (s *Store) PurgePageviews(ctx context.Context, before time.Time, limit int) (int, error) {
 	res, err := s.db.ExecContext(ctx,
 		`DELETE FROM pageviews WHERE id IN (SELECT id FROM pageviews WHERE ts < ? LIMIT ?)`,
@@ -201,6 +258,13 @@ func (s *Store) PurgePageviews(ctx context.Context, before time.Time, limit int)
 	if err != nil {
 		return 0, fmt.Errorf("analytics: purge pageviews: %w", err)
 	}
-	n, _ := res.RowsAffected()
-	return int(n), nil
+	pageviews, _ := res.RowsAffected()
+	res, err = s.db.ExecContext(ctx,
+		`DELETE FROM visits WHERE id IN (SELECT id FROM visits WHERE last_at < ? LIMIT ?)`,
+		before.UnixMilli(), limit)
+	if err != nil {
+		return 0, fmt.Errorf("analytics: purge visits: %w", err)
+	}
+	visits, _ := res.RowsAffected()
+	return int(pageviews + visits), nil
 }

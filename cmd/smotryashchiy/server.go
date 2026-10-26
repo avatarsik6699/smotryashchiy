@@ -104,8 +104,10 @@ func runServer(stdout, stderr io.Writer) error {
 		uptimeapp.Options{Retention: time.Duration(cfg.RawRetentionDays) * 24 * time.Hour})
 	uptimehttp.NewHandlers(uptimeSvc).Register(srv.Mux)
 	go uptimeSvc.Run(ctx)
+	geo := analyticsinfra.NewGeoIP(cfg.GeoIPPath, time.Now)
+	defer func() { _ = geo.Close() }()
 	analyticsSvc := analyticsapp.NewService(analyticsinfra.NewStore(sqlDB), time.Now,
-		analyticsapp.Options{Retention: time.Duration(cfg.AnalyticsRetentionDays) * 24 * time.Hour})
+		analyticsapp.Options{Retention: time.Duration(cfg.AnalyticsRetentionDays) * 24 * time.Hour, Geo: geo})
 	analyticshttp.NewHandlers(analyticsSvc).Register(srv.Mux)
 	analyticshttp.NewCollectHandlers(analyticsSvc, cfg.TrustedProxyCIDRs).Register(srv.Mux)
 	analyticshttp.NewTrackHandlers().Register(srv.Mux)

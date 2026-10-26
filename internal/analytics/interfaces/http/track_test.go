@@ -20,7 +20,7 @@ const fs = require("fs");
 const code = fs.readFileSync(process.argv[2], "utf8");
 const beacons = [];
 const listeners = {};
-const loc = { pathname: "/", search: "", hash: "" };
+const loc = { pathname: "/", search: "?utm_source=VK&utm_medium=social&utm_campaign=ege16&yclid=abc&x=1", hash: "", hostname: "site.test" };
 function setURL(u) {
   const x = new URL(u, "https://site.test" + loc.pathname + loc.search);
   loc.pathname = x.pathname; loc.search = x.search; loc.hash = x.hash;
@@ -34,9 +34,9 @@ const ctx = vm.createContext({
     currentScript: { src: "https://collector.test/track.js", getAttribute: (n) => (n === "data-site" ? "site-1" : null) },
     referrer: "https://ref.test/from?q=1", title: "T",
   },
-  location: loc, history, screen: { width: 1, height: 1 },
+  location: loc, history, screen: { width: 1, height: 1 }, URL, URLSearchParams,
   navigator: { language: "ru", sendBeacon: (url, blob) => { beacons.push({ url, blob }); return true; } },
-  window: { addEventListener: (ev, fn) => { (listeners[ev] = listeners[ev] || []).push(fn); } },
+  window: { innerWidth: 390, addEventListener: (ev, fn) => { (listeners[ev] = listeners[ev] || []).push(fn); } },
   Blob, JSON, fetch: () => { throw new Error("fetch fallback must not be used when sendBeacon exists"); },
 });
 const steps = [
@@ -59,8 +59,10 @@ const steps = [
       const body = JSON.parse(await b.blob.text());
       if (body.site !== "site-1") throw new Error("beacon for site " + body.site);
       const keys = Object.keys(body).sort().join(",");
-      if (keys !== "referrer,site,url") throw new Error("beacon keys " + keys + ", want referrer,site,url");
-      sent.push(body.url + " ref=" + body.referrer);
+      const first = "h,paid,referrer,site,url,utm,v,w", later = "h,referrer,site,url,v,w";
+      if (keys !== first && keys !== later) throw new Error("beacon keys " + keys);
+      sent.push(body.url + " ref=" + body.referrer + " utm=" + (body.utm ? JSON.stringify(body.utm) : "-") +
+        " paid=" + (body.paid === undefined ? "-" : body.paid) + " w=" + body.w + " h=" + body.h + " v=" + body.v);
     }
     out.push({ step: name, sent });
   }
@@ -68,8 +70,9 @@ const steps = [
 })().catch((e) => { console.error(e); process.exit(1); });
 `
 
-// Each sent entry is "<url> ref=<referrer>": the pathname only, and the page load's referrer only on
-// its first pageview (docs/SPEC.md §4i).
+// Each sent entry is "<url> ref=… utm=… paid=… w=… h=… v=…": the pathname only; the page load's
+// referrer, as an origin, and its campaign (UTM, ad click flag) only on its first pageview
+// (docs/SPEC.md §4i, Change 35).
 func TestTrackJSCountsPathChangesNotHistoryCalls(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
@@ -116,13 +119,13 @@ func TestTrackJSCountsPathChangesNotHistoryCalls(t *testing.T) {
 		t.Fatalf("harness output %q: %v", out, err)
 	}
 	want := map[string][]string{
-		"load":                                  {"/ ref=https://ref.test/from?q=1"},
+		"load":                                  {`/ ref=https://ref.test utm={"source":"VK","medium":"social","campaign":"ege16"} paid=true w=390 h=site.test v=2`},
 		"same-url replaceState (hydration)":     {},
 		"replaceState without url (state only)": {},
-		"pushState new path":                    {"/ege ref="},
+		"pushState new path":                    {"/ege ref= utm=- paid=- w=390 h=site.test v=2"},
 		"replaceState new search":               {},
 		"hash-only pushState":                   {},
-		"popstate back":                         {"/ ref="},
+		"popstate back":                         {"/ ref= utm=- paid=- w=390 h=site.test v=2"},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("got %d steps, want %d: %+v", len(got), len(want), got)

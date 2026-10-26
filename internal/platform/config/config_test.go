@@ -97,8 +97,8 @@ func TestLoadRetentionDefaultsAndOverrides(t *testing.T) {
 		t.Fatalf("overrides = %d/%d, err = %v", cfg.RawRetentionDays, cfg.RollupRetentionDays, err)
 	}
 	// Change 28: pageviews keep their own TTL; a shorter raw TTL does not shorten it.
-	if cfg.AnalyticsRetentionDays != 30 {
-		t.Fatalf("analytics default = %d, want 30 regardless of the raw TTL", cfg.AnalyticsRetentionDays)
+	if cfg.AnalyticsRetentionDays != 90 {
+		t.Fatalf("analytics default = %d, want 90 regardless of the raw TTL", cfg.AnalyticsRetentionDays)
 	}
 	t.Setenv(envAnalyticsDays, "60")
 	if cfg, err = Load("development"); err != nil || cfg.AnalyticsRetentionDays != 60 {

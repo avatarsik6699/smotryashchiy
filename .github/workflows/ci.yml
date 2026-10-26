@@ -72,6 +72,9 @@ jobs:
       - name: Backup recipe
         run: shellcheck deploy/backup/*.sh deploy/backup/tests/*.sh && bash deploy/backup/tests/smotryashchiy-backup.test.sh
 
+      - name: GeoIP recipe
+        run: shellcheck deploy/geoip/*.sh deploy/geoip/tests/*.sh && bash deploy/geoip/tests/smotryashchiy-geoip.test.sh
+
       - name: Secrets scan
         run: bash scripts/secrets-gate.sh
 

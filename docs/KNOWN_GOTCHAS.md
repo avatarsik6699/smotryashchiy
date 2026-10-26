@@ -406,3 +406,15 @@ Carry these into the first contract tests instead of rediscovering them in produ
   `set -e` is set again inside `f`.
 - **Fix**: mode functions end each step with `|| return`. Tests assert failures with explicit
   `if …; then exit 1; fi`: a bare `! cmd` never trips errexit either (shellcheck SC2251).
+
+## GeoIP file replaced but the container keeps the old one (Change 35)
+
+- **Symptom:** after the monthly refresh the server still answers with last month's geography, or
+  sees no file at all.
+- **Cause:** a bind mount of the file itself. `smotryashchiy-geoip` replaces the file with a rename,
+  and a single-file mount stays on the old inode.
+- **Fix:** mount the directory (`/var/lib/smotryashchiy/geoip:/geoip:ro`) as the compose examples
+  do. The server rechecks the modification time once a minute.
+- Related: the refresh script checks the MMDB marker with `LC_ALL=C grep -aF`. Under a UTF-8 locale
+  `grep` does not match the raw marker bytes and refuses a valid file.
+

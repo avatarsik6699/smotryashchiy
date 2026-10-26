@@ -31,9 +31,13 @@ type Config struct {
 	RawRetentionDays int
 	// RollupRetentionDays is the TTL of hourly metric rollups.
 	RollupRetentionDays int
-	// AnalyticsRetentionDays is the TTL of site pageviews (docs/SPEC.md §4i), kept apart from the
-	// raw telemetry TTL so trimming host metrics does not cut the 30-day stats range (Change 28).
+	// AnalyticsRetentionDays is the TTL of site pageviews and visits (docs/SPEC.md §4i), kept apart
+	// from the raw telemetry TTL so trimming host metrics does not cut the stats range (Change 28);
+	// 90 days since Change 35.
 	AnalyticsRetentionDays int
+	// GeoIPPath is an optional MMDB file (DB-IP City Lite) that places visitors by country and
+	// region (Change 35); empty means no geography.
+	GeoIPPath string
 	// WGPort is the UDP port of the in-process WireGuard endpoint (docs/SPEC.md §4b).
 	WGPort int
 	// TunnelCIDR is the tunnel subnet; the server takes its first host address.
@@ -66,6 +70,7 @@ const (
 	envProxies       = "SMOTRYASHCHIY_TRUSTED_PROXY_CIDRS"
 	envRawDays       = "SMOTRYASHCHIY_RAW_RETENTION_DAYS"
 	envAnalyticsDays = "SMOTRYASHCHIY_ANALYTICS_RETENTION_DAYS"
+	envGeoIPPath     = "SMOTRYASHCHIY_GEOIP_PATH"
 	envRollupDays    = "SMOTRYASHCHIY_ROLLUP_RETENTION_DAYS"
 	envWGPort        = "SMOTRYASHCHIY_WG_PORT"
 	envTunnelCIDR    = "SMOTRYASHCHIY_TUNNEL_CIDR"
@@ -84,7 +89,7 @@ const (
 
 	defaultRawRetentionDays       = 30
 	defaultRollupRetentionDays    = 396 // 13 months
-	defaultAnalyticsRetentionDays = 30  // the longest stats range
+	defaultAnalyticsRetentionDays = 90  // Change 35, architect decision 2026-10-26
 )
 
 var releasePattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
@@ -160,6 +165,7 @@ func Load(defaultRelease string) (Config, error) {
 		RawRetentionDays:       rawDays,
 		RollupRetentionDays:    rollupDays,
 		AnalyticsRetentionDays: analyticsDays,
+		GeoIPPath:              strings.TrimSpace(os.Getenv(envGeoIPPath)),
 		WGPort:                 wgPort,
 		TunnelCIDR:             tunnelCIDR,
 		PublicEndpoint:         endpoint,

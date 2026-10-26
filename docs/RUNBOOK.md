@@ -95,7 +95,7 @@ Agents reconnect on their own: the WireGuard server key is part of the bundle. P
 - **Disk**: the SQLite file plus its `-wal`/`-shm` siblings under the `smotryashchiy-data` volume. Raw
   telemetry and uptime results are purged after `SMOTRYASHCHIY_RAW_RETENTION_DAYS` (default 30; the
   production server uses 14 since v0.4.0, architect decision 2026-10-19: raw host metrics filled the
-  20 GB disk), site pageviews after `SMOTRYASHCHIY_ANALYTICS_RETENTION_DAYS` (default 30); rollups
+  20 GB disk), site pageviews and visits after `SMOTRYASHCHIY_ANALYTICS_RETENTION_DAYS` (default 90 since Change 35); rollups
   after `SMOTRYASHCHIY_ROLLUP_RETENTION_DAYS` (default 396). Purged rows free pages inside the file
   for reuse; the file itself shrinks only after a `VACUUM`. If disk use is unexpectedly high, check
   `docker exec <container> /smotryashchiy admin backup --out - | wc -c` (the compressed database size)
@@ -202,7 +202,7 @@ docker compose start server
 
 **Disk filling up faster than expected.**
 Lower `SMOTRYASHCHIY_RAW_RETENTION_DAYS`/`SMOTRYASHCHIY_ROLLUP_RETENTION_DAYS`, or
-`SMOTRYASHCHIY_ANALYTICS_RETENTION_DAYS` for pageviews (restart to apply); purges
+`SMOTRYASHCHIY_ANALYTICS_RETENTION_DAYS` for pageviews and visits (restart to apply); purges
 run at start-up and then on their own schedule, so growth stops within one purge cycle, not instantly.
 
 ## Upgrade and rollback

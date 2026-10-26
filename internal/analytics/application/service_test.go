@@ -11,6 +11,7 @@ import (
 type fakeRepo struct {
 	sites     map[string]domain.Site
 	pageviews []domain.Pageview
+	visits    []domain.Visit // the visit each pageview was recorded with
 	salt      string
 	since     time.Time // the last Stats call's lower bound
 }
@@ -36,8 +37,9 @@ func (f *fakeRepo) SiteExists(_ context.Context, id string) (domain.Site, bool, 
 	return s, ok, nil
 }
 func (f *fakeRepo) DeleteSite(_ context.Context, id string) error { delete(f.sites, id); return nil }
-func (f *fakeRepo) InsertPageview(_ context.Context, p domain.Pageview) error {
+func (f *fakeRepo) RecordPageview(_ context.Context, p domain.Pageview, v domain.Visit) error {
 	f.pageviews = append(f.pageviews, p)
+	f.visits = append(f.visits, v)
 	return nil
 }
 func (f *fakeRepo) Stats(_ context.Context, _ string, since time.Time) (domain.Stats, error) {
@@ -141,26 +143,26 @@ func TestCollectStoresOnlyBeaconsFromTheSitesOwnOrigin(t *testing.T) {
 	}
 }
 
-func TestVisitorHashRotatesDailyAndIsStableWithinADay(t *testing.T) {
+// Change 35: the salt turns over at the site's local midnight — 21:00 UTC for Europe/Moscow.
+func TestVisitorHashRotatesAtTheSitesMidnight(t *testing.T) {
 	repo := newFakeRepo()
-	day1 := time.Date(2026, 9, 22, 10, 0, 0, 0, time.UTC)
-	day1Later := time.Date(2026, 9, 22, 23, 0, 0, 0, time.UTC)
-	day2 := time.Date(2026, 9, 23, 0, 0, 1, 0, time.UTC)
-
+	site := domain.Site{ID: "site1", Timezone: "Europe/Moscow"}
 	hashAt := func(now time.Time) string {
 		svc := NewService(repo, func() time.Time { return now }, Options{})
-		h, err := svc.visitorHash(context.Background(), "site1", "203.0.113.5", "UA")
+		h, err := svc.visitorHash(context.Background(), site, "203.0.113.5", "UA", now)
 		if err != nil {
 			t.Fatalf("visitorHash: %v", err)
 		}
 		return h
 	}
-	h1, h1b, h2 := hashAt(day1), hashAt(day1Later), hashAt(day2)
-	if h1 != h1b {
-		t.Fatalf("hash changed within the same UTC day: %q vs %q", h1, h1b)
+	morning := hashAt(time.Date(2026, 9, 22, 0, 30, 0, 0, time.UTC))       // 03:30 MSK, 22 Sep
+	evening := hashAt(time.Date(2026, 9, 22, 20, 59, 0, 0, time.UTC))      // 23:59 MSK, 22 Sep
+	nextMoscowDay := hashAt(time.Date(2026, 9, 22, 21, 0, 1, 0, time.UTC)) // 00:00 MSK, 23 Sep
+	if morning != evening {
+		t.Fatalf("hash changed within one Moscow day: %q vs %q", morning, evening)
 	}
-	if h1 == h2 {
-		t.Fatal("hash did not rotate across a UTC day boundary")
+	if evening == nextMoscowDay {
+		t.Fatal("hash did not rotate at Moscow midnight")
 	}
 }
 
@@ -255,6 +257,65 @@ func TestStatsRangesAreUTCCalendarDays(t *testing.T) {
 		}
 		if !repo.since.Equal(c.since) {
 			t.Errorf("now %s range %q: since %s, want %s", c.now, c.rng, repo.since.UTC(), c.since)
+		}
+	}
+}
+
+type fakeGeo struct{ ip string }
+
+func (g *fakeGeo) Locate(ip string) (string, string) {
+	g.ip = ip
+	return "RU", "Kirov Oblast"
+}
+
+// Change 35: a v2 beacon's campaign, screen and hostname, the server-side geography and versions
+// reach the visit; the visitor's IP only reaches the geography lookup.
+func TestCollectDescribesTheVisitFromAV2Beacon(t *testing.T) {
+	repo := newFakeRepo()
+	now := time.Date(2026, 10, 26, 12, 0, 0, 0, time.UTC)
+	repo.sites["s"] = domain.Site{ID: "s", Domain: "kodumka.ru", Timezone: "Europe/Moscow"}
+	geo := &fakeGeo{}
+	svc := NewService(repo, func() time.Time { return now }, Options{Geo: geo})
+	const ua = "Mozilla/5.0 (Linux; Android 14; SM-A546B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 YaBrowser/25.4.1.100 Mobile Safari/537.36"
+	b := domain.Beacon{Site: "s", URL: "/ege", Referrer: "https://vk.com", V: 2,
+		UTM: domain.UTM{Source: "VK", Medium: "social", Campaign: "ege 16 октябрь"}, Width: 390, Hostname: "www.kodumka.ru"}
+	if stored, err := svc.Collect(context.Background(), b, "203.0.113.5", ua, "www.kodumka.ru"); err != nil || !stored {
+		t.Fatalf("stored=%v err=%v", stored, err)
+	}
+	pv, v := repo.pageviews[0], repo.visits[0]
+	if pv.Hostname != "www.kodumka.ru" || geo.ip != "203.0.113.5" {
+		t.Fatalf("hostname %q, geo saw %q", pv.Hostname, geo.ip)
+	}
+	want := domain.Visit{Source: "VK", Channel: ChannelSocial,
+		UTM:     domain.UTM{Source: "vk", Medium: "social", Campaign: domain.InvalidUTM},
+		Country: "RU", Region: "Kirov Oblast", BrowserVersion: "25", OSVersion: "14", Screen: "mobile"}
+	if v != want {
+		t.Fatalf("visit = %+v\nwant    %+v", v, want)
+	}
+	// a hostname outside the site falls back to the Origin the beacon came from
+	b.Hostname = "evil.test"
+	if _, err := svc.Collect(context.Background(), b, "203.0.113.5", ua, "kodumka.ru"); err != nil {
+		t.Fatal(err)
+	}
+	if got := repo.pageviews[1].Hostname; got != "kodumka.ru" {
+		t.Fatalf("foreign hostname kept: %q", got)
+	}
+}
+
+func TestUAVersions(t *testing.T) {
+	cases := []struct{ ua, browser, os, wantBrowser, wantOS string }{
+		{"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0", "Edge", "Windows", "131", "10/11"},
+		{"Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 Chrome/109.0 Safari/537.36", "Chrome", "Windows", "109", "7"},
+		{"Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1", "Safari", "iOS", "18", "18"},
+		{"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15", "Safari", "macOS", "17", "10.15"},
+		{"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Firefox/120.0", "Firefox", "Linux", "120", ""},
+		{"Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) FxiOS/133.0 Mobile/15E148 Safari/605.1.15", "Firefox", "iOS", "133", "18"},
+		{"Mozilla/5.0 something unknown", "Other", "Other", "", ""},
+	}
+	for _, c := range cases {
+		b, o := uaVersions(c.ua, c.browser, c.os)
+		if b != c.wantBrowser || o != c.wantOS {
+			t.Errorf("uaVersions(%q) = %q, %q; want %q, %q", c.ua, b, o, c.wantBrowser, c.wantOS)
 		}
 	}
 }

@@ -21,6 +21,7 @@ services:
     security_opt: ["no-new-privileges:true"]
     environment:
       SMOTRYASHCHIY_PRODUCTION: "true"
+      SMOTRYASHCHIY_GEOIP_PATH: "/geoip/dbip-city-lite.mmdb"   # optional, see volumes below
       SMOTRYASHCHIY_TLS_DOMAIN: "monitor.example.com"
       SMOTRYASHCHIY_ACME_EMAIL: "you@example.com"   # optional: renewal/expiry notices
       # SMOTRYASHCHIY_ACME_CA: "staging"             # uncomment while testing a new domain
@@ -33,6 +34,9 @@ services:
       - "51820:51820/udp"   # WireGuard tunnel for agents
     volumes:
       - smotryashchiy-data:/data
+      # Change 35 (optional): visitor country/region from DB-IP City Lite, refreshed monthly by
+      # deploy/geoip on this host; mount the directory so an atomic replace is seen inside.
+      - /var/lib/smotryashchiy/geoip:/geoip:ro
 
 volumes:
   smotryashchiy-data:

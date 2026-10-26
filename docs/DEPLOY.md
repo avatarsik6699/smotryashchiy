@@ -43,6 +43,26 @@ it must be reachable from your hosts). Prefer the server to terminate HTTPS itse
 4. Put a reverse proxy in front of `127.0.0.1:8080` (Caddy: `monitor.example.com { reverse_proxy 127.0.0.1:8080 }`).
    The session cookie is `Secure`, so the UI must be opened over HTTPS.
 
+## Visitor geography (optional, Change 35)
+
+The Analytics view can show each visit's country and region from DB-IP City Lite (CC BY 4.0), a
+free monthly file of about 120 MB. Nothing is downloaded by the server itself. Install the refresh on
+the server's host:
+
+```bash
+install -m 755 deploy/geoip/smotryashchiy-geoip.sh /usr/local/sbin/smotryashchiy-geoip
+install -m 644 deploy/geoip/smotryashchiy-geoip.{service,timer} /etc/systemd/system/
+systemctl daemon-reload
+/usr/local/sbin/smotryashchiy-geoip            # first download now
+systemctl enable --now smotryashchiy-geoip.timer
+```
+
+The compose examples mount `/var/lib/smotryashchiy/geoip` read-only at `/geoip` and set
+`SMOTRYASHCHIY_GEOIP_PATH=/geoip/dbip-city-lite.mmdb`. Mount the directory, not the file: the refresh
+replaces the file with a rename, which a single-file bind mount would not show. The server reopens a
+replaced file within a minute. Without the file, analytics works without geography. The visitor's IP
+is used for the lookup at intake and never stored.
+
 ## Adding a host
 
 Open the UI, choose **+ add host**, name it, and run the command it shows on that host (it is valid for one
